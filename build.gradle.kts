@@ -12,13 +12,7 @@ version = "0.1.0"
 
 java {
     toolchain {
-        languageVersion = JavaLanguageVersion.of(21)
-    }
-}
-
-configurations {
-    compileOnly {
-        extendsFrom(configurations.annotationProcessor.get())
+        languageVersion = JavaLanguageVersion.of(25)
     }
 }
 
@@ -33,13 +27,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     
     // Java Operator SDK
-    implementation("io.javaoperatorsdk:operator-framework-spring-boot-starter:6.3.1")
+    implementation("io.javaoperatorsdk:operator-framework-spring-boot-starter:6.3.2")
     
     // Kubernetes Client
-    implementation("io.fabric8:kubernetes-client:6.13.4")
+    implementation("io.fabric8:kubernetes-client:6.14.0")
     
     // Istio Model (fabric8 kubernetes-model for Istio)
-    implementation("io.fabric8:istio-model-v1beta1:6.13.4")
+    implementation("io.fabric8:istio-model-v1beta1:6.14.0")
     
     // Lombok
     compileOnly("org.projectlombok:lombok")
@@ -55,23 +49,4 @@ dependencies {
 
 tasks.withType<Test> {
     useJUnitPlatform()
-}
-
-tasks.named<BootJar>("bootJar") {
-    archiveFileName.set("${project.name}-${project.version}.jar")
-}
-
-tasks.named<Jar>("jar") {
-    archiveFileName.set("${project.name}-${project.version}-plain.jar")
-}
-
-graalvmNative {
-    binaries {
-        named("main") {
-            imageName.set("serviceenv-operator")
-            mainClass.set("com.zaeyi.serviceenv.OperatorApplication")
-            buildArgs.add("--verbose")
-            buildArgs.add("-H:+ReportExceptionStackTraces")
-        }
-    }
 }
