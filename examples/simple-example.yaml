@@ -1,0 +1,101 @@
+# 简单示例：创建一个开发环境和一个生产环境
+
+---
+# 生产环境
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: prod
+  namespace: default
+spec:
+  envName: prod
+  description: "生产环境"
+  enabled: true
+
+---
+# 开发环境，fallback到生产
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: dev
+  namespace: default
+spec:
+  envName: dev
+  fallbackEnv: prod
+  description: "开发环境"
+  enabled: true
+
+---
+# 部署生产版本的服务
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service-prod
+  namespace: default
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: order-service
+      version: v1
+      serviceenv.zaeyi.com/service-env: prod
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v1
+        serviceenv.zaeyi.com/service-env: prod
+    spec:
+      containers:
+        - name: order-service
+          image: your-registry/order-service:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV
+              value: "production"
+
+---
+# 部署开发版本的服务
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service-dev
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+      version: v2-dev
+      serviceenv.zaeyi.com/service-env: dev
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v2-dev
+        serviceenv.zaeyi.com/service-env: dev
+    spec:
+      containers:
+        - name: order-service
+          image: your-registry/order-service:v2-dev
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV
+              value: "development"
+
+---
+# Kubernetes Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  namespace: default
+spec:
+  ports:
+    - port: 8080
+      name: http
+      targetPort: 8080
+  selector:
+    app: order-service

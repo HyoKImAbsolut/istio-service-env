@@ -1,0 +1,173 @@
+# 多服务示例：展示服务间调用和fallback
+
+---
+# 环境定义
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: prod
+spec:
+  envName: prod
+  description: "生产环境"
+  enabled: true
+
+---
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: feature-payment
+spec:
+  envName: feature-payment
+  fallbackEnv: prod
+  description: "支付功能开发环境"
+  enabled: true
+
+---
+# 生产环境服务
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: api-gateway
+      serviceenv.zaeyi.com/service-env: prod
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+        version: v1
+        serviceenv.zaeyi.com/service-env: prod
+    spec:
+      containers:
+        - name: api-gateway
+          image: api-gateway:v1
+          ports:
+            - containerPort: 8080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: order-service
+      serviceenv.zaeyi.com/service-env: prod
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v1
+        serviceenv.zaeyi.com/service-env: prod
+    spec:
+      containers:
+        - name: order-service
+          image: order-service:v1
+          ports:
+            - containerPort: 8080
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service-prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: payment-service
+      serviceenv.zaeyi.com/service-env: prod
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        version: v1
+        serviceenv.zaeyi.com/service-env: prod
+    spec:
+      containers:
+        - name: payment-service
+          image: payment-service:v1
+          ports:
+            - containerPort: 8080
+
+---
+# Feature环境的payment-service新版本
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-service-feature
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-service
+      serviceenv.zaeyi.com/service-env: feature-payment
+  template:
+    metadata:
+      labels:
+        app: payment-service
+        version: v2-feature
+        serviceenv.zaeyi.com/service-env: feature-payment
+    spec:
+      containers:
+        - name: payment-service
+          image: payment-service:v2-feature
+          ports:
+            - containerPort: 8080
+
+---
+# Kubernetes Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: api-gateway
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: api-gateway
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: order-service
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-service
+spec:
+  ports:
+    - port: 8080
+      name: http
+  selector:
+    app: payment-service
+
+---
+# 测试说明
+# 
+# 调用链：api-gateway -> order-service -> payment-service
+#
+# 使用feature-payment环境测试：
+# curl -H "x-service-env: feature-payment" http://api-gateway:8080/api/order
+#
+# 路由行为：
+# 1. api-gateway: 不存在feature-payment版本 -> fallback到prod
+# 2. order-service: 不存在feature-payment版本 -> fallback到prod  
+# 3. payment-service: 存在feature-payment版本 -> 使用feature版本
+#
+# 整个链路保持x-service-env: feature-payment标识

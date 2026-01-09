@@ -1,0 +1,25 @@
+spring:
+  application:
+    name: serviceenv-operator
+
+server:
+  port: 8080
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+operator:
+  name: serviceenv-operator
+  namespace: ${OPERATOR_NAMESPACE:default}
+
+logging:
+  level:
+    io.javaoperatorsdk: INFO
+    com.zaeyi.serviceenv: DEBUG
+    io.fabric8.kubernetes: INFO

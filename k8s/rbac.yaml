@@ -1,0 +1,111 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: serviceenv-operator
+  namespace: default
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: serviceenv-operator
+rules:
+  # ServiceEnv CRD权限
+  - apiGroups:
+      - serviceenv.zaeyi.com
+    resources:
+      - serviceenvs
+      - serviceenvs/status
+      - serviceenvs/finalizers
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  # Pod权限
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+
+  # Deployment权限
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+    verbs:
+      - get
+      - list
+      - watch
+
+  # Service权限
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - get
+      - list
+      - watch
+
+  # Istio VirtualService权限
+  - apiGroups:
+      - networking.istio.io
+    resources:
+      - virtualservices
+      - virtualservices/status
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  # Istio DestinationRule权限
+  - apiGroups:
+      - networking.istio.io
+    resources:
+      - destinationrules
+      - destinationrules/status
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - patch
+      - delete
+
+  # Events权限（用于记录事件）
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: serviceenv-operator
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: serviceenv-operator
+subjects:
+  - kind: ServiceAccount
+    name: serviceenv-operator
+    namespace: default
