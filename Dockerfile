@@ -1,27 +1,5 @@
-# GraalVM Native Image 多阶段构建
-# 阶段1: 构建 Native Image
-FROM ghcr.io/graalvm/native-image-community:25 AS builder
-
-WORKDIR /workspace
-
-# 复制 Gradle wrapper 和配置文件
-COPY gradlew .
-COPY gradle gradle
-COPY build.gradle.kts .
-COPY settings.gradle.kts .
-COPY gradle.properties .
-
-# 下载依赖（利用 Docker 缓存）
-RUN ./gradlew dependencies --no-daemon
-
-# 复制源代码
-COPY src src
-
-# 构建 Native Image
-# 使用 Spring Boot 的 nativeCompile 任务
-RUN ./gradlew nativeCompile --no-daemon
-
-# 阶段2: 运行时镜像（使用最小基础镜像）
+# GraalVM Native Image 运行时镜像
+# 注意：Native Image 在 GitHub Actions 中构建，这里只打包运行时
 FROM ubuntu:22.04
 
 # 安装运行时依赖
@@ -35,8 +13,8 @@ RUN groupadd -r appuser && useradd -r -g appuser -u 1000 appuser
 
 WORKDIR /app
 
-# 从构建阶段复制 Native Image 可执行文件
-COPY --from=builder /workspace/build/native/nativeCompile/serviceenv-operator /app/serviceenv-operator
+# 从本地构建目录复制 Native Image 可执行文件
+COPY build/native/nativeCompile/serviceenv-operator /app/serviceenv-operator
 
 # 设置可执行权限
 RUN chmod +x /app/serviceenv-operator && \
