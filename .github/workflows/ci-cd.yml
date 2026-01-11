@@ -18,11 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-java@v4
+      - uses: graalvm/setup-graalvm@v1
         with:
           distribution: 'graalvm-community'
           java-version: '25'
           cache: 'gradle'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get version
         id: version
