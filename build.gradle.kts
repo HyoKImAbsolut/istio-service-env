@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.zaeyi"
-version = "0.1.0"
+version = project.findProperty("version")?.toString() ?: "0.1.0-SNAPSHOT"
 
 java {
     toolchain {

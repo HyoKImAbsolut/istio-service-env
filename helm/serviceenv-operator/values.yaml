@@ -1,0 +1,125 @@
+# Default values for serviceenv-operator
+
+# 镜像配置
+image:
+  repository: docker.io/zaeyi/serviceenv-operator
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# 副本数
+replicaCount: 1
+
+# ServiceAccount配置
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# Pod注解
+podAnnotations: {}
+
+# Pod安全上下文
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroup: 1000
+
+# 容器安全上下文
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: true
+
+# Service配置
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+
+# 资源限制
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
+
+# 健康检查
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+  initialDelaySeconds: 20
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+# 节点选择器
+nodeSelector: {}
+
+# 容忍度
+tolerations: []
+
+# 亲和性
+affinity: {}
+
+# 环境变量
+env: []
+  # - name: JAVA_OPTS
+  #   value: "-Xmx256m"
+
+# 额外的卷
+extraVolumes: []
+  # - name: config
+  #   configMap:
+  #     name: operator-config
+
+# 额外的卷挂载
+extraVolumeMounts: []
+  # - name: config
+  #   mountPath: /config
+
+# RBAC配置
+rbac:
+  create: true
+
+# 是否安装CRD
+installCRDs: true
+
+# Operator配置
+operator:
+  # 日志级别
+  logLevel: info
+  # 监控的命名空间（留空表示所有命名空间）
+  watchNamespaces: []
+  # 并发reconcile数量
+  concurrentReconciles: 1
+
+# Metrics配置
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+
+# Istio配置
+istio:
+  # 是否需要Istio注入
+  injection: false

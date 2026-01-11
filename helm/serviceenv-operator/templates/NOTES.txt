@@ -1,0 +1,43 @@
+✨ ServiceEnv Operator has been installed! ✨
+
+Release Name: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Version: {{ .Chart.AppVersion }}
+
+🚀 Get Started:
+
+1. Check the operator status:
+   kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "serviceenv-operator.name" . }}
+
+2. View operator logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "serviceenv-operator.name" . }} -f
+
+3. Create your first ServiceEnv:
+   cat <<EOF | kubectl apply -f -
+   apiVersion: serviceenv.zaeyi.com/v1
+   kind: ServiceEnv
+   metadata:
+     name: dev
+     namespace: default
+   spec:
+     envName: dev
+     fallbackEnv: prod
+     enabled: true
+   EOF
+
+4. Check ServiceEnv status:
+   kubectl get serviceenvs -A
+
+📚 Documentation:
+   - GitHub: https://github.com/zaeyi/serviceenv-operator
+   - Header Propagation: See HEADER_PROPAGATION_BEST_PRACTICE.md
+
+💡 Tips:
+   - Label your Deployments with "serviceenv.zaeyi.com/service-env: <env-name>"
+   - Use "x-service-env" header for HTTP routing
+   - Check examples/ directory for more use cases
+
+🐛 Issues:
+   Report issues at: https://github.com/zaeyi/serviceenv-operator/issues
+
+Happy service meshing! 🎉

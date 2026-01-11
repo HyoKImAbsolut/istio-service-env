@@ -48,7 +48,9 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
             status.setLastUpdateTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
             if (resource.getSpec().getEnabled()) {
+                // 配置Istio路由规则
                 istioConfigService.configureIstio(resource, services);
+                
                 status.setPhase("Active");
                 status.setMessage("Environment is active with " + services.size() + " services");
                 status.setIstioConfigured(true);

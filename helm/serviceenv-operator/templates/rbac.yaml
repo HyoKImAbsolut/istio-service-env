@@ -1,15 +1,11 @@
----
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: serviceenv-operator
-  namespace: default
-
+{{- if .Values.rbac.create -}}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: serviceenv-operator
+  name: {{ include "serviceenv-operator.fullname" . }}
+  labels:
+    {{- include "serviceenv-operator.labels" . | nindent 4 }}
 rules:
   # ServiceEnv CRD权限
   - apiGroups:
@@ -52,6 +48,16 @@ rules:
       - ""
     resources:
       - services
+    verbs:
+      - get
+      - list
+      - watch
+
+  # Namespace权限
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
     verbs:
       - get
       - list
@@ -100,12 +106,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: serviceenv-operator
+  name: {{ include "serviceenv-operator.fullname" . }}
+  labels:
+    {{- include "serviceenv-operator.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: serviceenv-operator
+  name: {{ include "serviceenv-operator.fullname" . }}
 subjects:
   - kind: ServiceAccount
-    name: serviceenv-operator
-    namespace: default
+    name: {{ include "serviceenv-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

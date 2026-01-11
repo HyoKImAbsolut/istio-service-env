@@ -1,0 +1,19 @@
+apiVersion: v2
+name: serviceenv-operator
+description: A Kubernetes operator for managing service environments with Istio
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - kubernetes
+  - operator
+  - istio
+  - service-mesh
+  - environment
+home: https://github.com/zaeyi/serviceenv-operator
+sources:
+  - https://github.com/zaeyi/serviceenv-operator
+maintainers:
+  - name: zaeyi
+    email: your-email@example.com
+icon: https://istio.io/latest/img/istio-logo.svg
