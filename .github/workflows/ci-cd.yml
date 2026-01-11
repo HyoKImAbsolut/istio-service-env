@@ -3,7 +3,6 @@ name: Build and Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -30,6 +29,9 @@ jobs:
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
           echo "version=${VERSION#v}" >> $GITHUB_OUTPUT
+          # 转换 repository owner 为小写（Docker 要求）
+          OWNER_LOWER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "owner_lower=${OWNER_LOWER}" >> $GITHUB_OUTPUT
 
       - name: Build
         run: ./gradlew build -x test
@@ -54,8 +56,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/serviceenv-operator:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ github.repository_owner }}/serviceenv-operator:latest
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.owner_lower }}/serviceenv-operator:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ steps.version.outputs.owner_lower }}/serviceenv-operator:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -79,4 +81,4 @@ jobs:
       - name: Push Helm Chart to OCI Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ${{ env.REGISTRY }} -u ${{ github.actor }} --password-stdin
-          helm push serviceenv-operator-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ github.repository_owner }}/charts
+          helm push serviceenv-operator-${{ steps.version.outputs.version }}.tgz oci://${{ env.REGISTRY }}/${{ steps.version.outputs.owner_lower }}/charts

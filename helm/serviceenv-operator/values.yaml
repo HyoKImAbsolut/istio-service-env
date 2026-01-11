@@ -1,6 +1,7 @@
 # 镜像配置
+# 注意：repository 必须全部小写（Docker 规范要求）
 image:
-  repository: ghcr.io/zaeyi/serviceenv-operator
+  repository: ghcr.io/hyokimabsolut/serviceenv-operator
   tag: ""  # 留空则使用 Chart.appVersion，也可通过 --set image.tag=xxx 覆盖
   pullPolicy: IfNotPresent
 
