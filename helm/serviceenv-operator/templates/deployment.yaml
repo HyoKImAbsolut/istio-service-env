@@ -1,83 +1,39 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "serviceenv-operator.fullname" . }}
-  namespace: {{ .Release.Namespace }}
+  name: {{ .Chart.Name }}
   labels:
-    {{- include "serviceenv-operator.labels" . | nindent 4 }}
+    app: {{ .Chart.Name }}
 spec:
-  replicas: {{ .Values.replicaCount }}
+  replicas: {{ .Values.replicas }}
   selector:
     matchLabels:
-      {{- include "serviceenv-operator.selectorLabels" . | nindent 6 }}
+      app: {{ .Chart.Name }}
   template:
     metadata:
-      annotations:
-        {{- with .Values.podAnnotations }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       labels:
-        {{- include "serviceenv-operator.selectorLabels" . | nindent 8 }}
-        {{- if .Values.istio.injection }}
-        sidecar.istio.io/inject: "true"
-        {{- end }}
+        app: {{ .Chart.Name }}
     spec:
-      {{- with .Values.imagePullSecrets }}
-      imagePullSecrets:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      serviceAccountName: {{ include "serviceenv-operator.serviceAccountName" . }}
+      serviceAccountName: {{ .Chart.Name }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        runAsNonRoot: true
+        runAsUser: 1000
       containers:
       - name: operator
-        securityContext:
-          {{- toYaml .Values.securityContext | nindent 12 }}
         image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
         imagePullPolicy: {{ .Values.image.pullPolicy }}
         ports:
-        - name: http
-          containerPort: 8080
-          protocol: TCP
-        {{- if .Values.livenessProbe }}
-        livenessProbe:
-          {{- toYaml .Values.livenessProbe | nindent 12 }}
-        {{- end }}
-        {{- if .Values.readinessProbe }}
-        readinessProbe:
-          {{- toYaml .Values.readinessProbe | nindent 12 }}
-        {{- end }}
+        - containerPort: 8080
         resources:
-          {{- toYaml .Values.resources | nindent 12 }}
-        env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "production"
-        - name: LOGGING_LEVEL_ROOT
-          value: {{ .Values.operator.logLevel | upper }}
-        {{- with .Values.env }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
+          {{- toYaml .Values.resources | nindent 10 }}
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
         volumeMounts:
         - name: tmp
           mountPath: /tmp
-        {{- with .Values.extraVolumeMounts }}
-        {{- toYaml . | nindent 8 }}
-        {{- end }}
       volumes:
       - name: tmp
         emptyDir: {}
-      {{- with .Values.extraVolumes }}
-      {{- toYaml . | nindent 6 }}
-      {{- end }}
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
