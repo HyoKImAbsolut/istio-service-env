@@ -266,7 +266,8 @@ public class NativeConfiguration {
                     .registerPattern("META-INF/services/io.fabric8.kubernetes.client.http.HttpClient$Factory")
                     .registerPattern("META-INF/services/io.fabric8.kubernetes.api.model.KubernetesResource")
                     .registerPattern("META-INF/services/io.fabric8.kubernetes.client.extension.ExtensionAdapter")
-                    .registerPattern("META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider");
+                    .registerPattern("META-INF/services/io.fabric8.kubernetes.client.ServiceToURLProvider")
+                    .registerPattern("META-INF/vertx/vertx-version.txt");
         }
 
         private void registerTypeIfPresent(RuntimeHints hints, String className, MemberCategory[] categories) {
