@@ -36,8 +36,7 @@ public class NativeConfiguration {
     private static final MemberCategory[] FULL_REFLECTION = {
             MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
             MemberCategory.INVOKE_PUBLIC_METHODS,
-            MemberCategory.INVOKE_DECLARED_METHODS,
-            MemberCategory.INVOKE_DECLARED_FIELDS
+            MemberCategory.INVOKE_DECLARED_METHODS
     };
 
     static class NativeHints implements RuntimeHintsRegistrar {
@@ -203,7 +202,6 @@ public class NativeConfiguration {
                     "io.fabric8.kubernetes.api.model.PersistentVolumeClaimList",
                     "io.fabric8.kubernetes.api.model.PersistentVolumeClaimSpec",
                     "io.fabric8.kubernetes.api.model.PersistentVolumeClaimStatus",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSource",
                     "io.fabric8.kubernetes.api.model.ServiceAccount",
                     "io.fabric8.kubernetes.api.model.ServiceAccountList",
                     "io.fabric8.kubernetes.api.model.LocalObjectReference",
