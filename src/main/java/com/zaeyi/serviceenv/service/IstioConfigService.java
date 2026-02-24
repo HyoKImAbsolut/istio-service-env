@@ -3,7 +3,12 @@ package com.zaeyi.serviceenv.service;
 import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
-import io.fabric8.istio.api.networking.v1beta1.*;
+
+import io.fabric8.istio.api.api.networking.v1alpha3.*;
+import io.fabric8.istio.api.networking.v1.DestinationRule;
+import io.fabric8.istio.api.networking.v1.DestinationRuleBuilder;
+import io.fabric8.istio.api.networking.v1.VirtualService;
+import io.fabric8.istio.api.networking.v1.VirtualServiceBuilder;
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
 import io.fabric8.kubernetes.client.KubernetesClient;
@@ -153,8 +158,8 @@ public class IstioConfigService {
         }
     }
 
-    private ObjectMeta createMetadata(String name, String namespace, String envName, 
-                                       String serviceName, ServiceEnv owner) {
+    private ObjectMeta createMetadata(String name, String namespace, String envName,
+                                      String serviceName, ServiceEnv owner) {
         Map<String, String> labels = new HashMap<>();
         labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/env", envName);
         labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName);

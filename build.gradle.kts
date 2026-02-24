@@ -2,9 +2,9 @@ import org.springframework.boot.gradle.tasks.bundling.BootJar
 
 plugins {
     java
-	id("org.springframework.boot") version "4.0.1"
+	id("org.springframework.boot") version "4.0.2"
 	id("io.spring.dependency-management") version "1.1.7"
-	id("org.graalvm.buildtools.native") version "0.11.3"
+	id("org.graalvm.buildtools.native") version "0.11.4"
 }
 
 group = "com.zaeyi"
@@ -27,13 +27,13 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
     
     // Java Operator SDK
-    implementation("io.javaoperatorsdk:operator-framework-spring-boot-starter:6.3.2")
+    implementation("io.javaoperatorsdk:operator-framework-spring-boot-starter:6.3.3")
     
     // Kubernetes Client
-    implementation("io.fabric8:kubernetes-client:6.14.0")
+    implementation("io.fabric8:kubernetes-client:7.5.2")
     
     // Istio Model (fabric8 kubernetes-model for Istio)
-    implementation("io.fabric8:istio-model-v1beta1:6.14.0")
+    implementation("io.fabric8:istio-model:7.5.2")
     
     // Lombok
     compileOnly("org.projectlombok:lombok")
