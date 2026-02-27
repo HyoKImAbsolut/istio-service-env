@@ -28,12 +28,20 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
 
     @Override
     public UpdateControl<ServiceEnv> reconcile(ServiceEnv resource, Context<ServiceEnv> context) {
-        log.info("Reconciling ServiceEnv: {}/{}", resource.getMetadata().getNamespace(), 
+        if (resource.getMetadata() == null || resource.getSpec() == null) {
+            log.warn("ServiceEnv has null metadata or spec skipping reconcile");
+            return UpdateControl.noUpdate();
+        }
+        log.info("Reconciling ServiceEnv: {}/{}", resource.getMetadata().getNamespace(),
                 resource.getMetadata().getName());
 
         try {
             String envName = resource.getSpec().getEnvName();
             String namespace = resource.getMetadata().getNamespace();
+            if (envName == null || envName.isEmpty()) {
+                log.warn("ServiceEnv {}/{} has empty envName skipping reconcile", namespace, resource.getMetadata().getName());
+                return UpdateControl.noUpdate();
+            }
 
             List<ServiceEnvStatus.ServiceInfo> services = 
                     serviceDiscoveryService.discoverServicesInEnv(namespace, envName);
@@ -47,7 +55,7 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
             status.setServices(services);
             status.setLastUpdateTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
 
-            if (resource.getSpec().getEnabled()) {
+            if (Boolean.TRUE.equals(resource.getSpec().getEnabled())) {
                 // 配置Istio路由规则
                 istioConfigService.configureIstio(resource, services);
                 

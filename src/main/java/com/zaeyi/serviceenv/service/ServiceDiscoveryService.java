@@ -100,6 +100,7 @@ public class ServiceDiscoveryService {
                 .getItems();
 
         return pods.stream()
+                .filter(pod -> pod.getMetadata() != null && pod.getMetadata().getLabels() != null)
                 .map(pod -> pod.getMetadata().getLabels()
                         .getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default"))
                 .collect(Collectors.toSet());

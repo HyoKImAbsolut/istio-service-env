@@ -21,8 +21,10 @@ public class PodReconciler implements Reconciler<Pod> {
 
     @Override
     public UpdateControl<Pod> reconcile(Pod pod, Context<Pod> context) {
+        if (pod.getMetadata() == null) {
+            return UpdateControl.noUpdate();
+        }
         Map<String, String> labels = pod.getMetadata().getLabels();
-        
         if (labels == null || !labels.containsKey(OperatorConstants.ENV_LABEL_KEY)) {
             return UpdateControl.noUpdate();
         }
@@ -46,7 +48,7 @@ public class PodReconciler implements Reconciler<Pod> {
                     .withName(envName)
                     .get();
 
-            if (serviceEnv != null) {
+            if (serviceEnv != null && serviceEnv.getMetadata() != null) {
                 Map<String, String> annotations = serviceEnv.getMetadata().getAnnotations();
                 if (annotations == null) {
                     annotations = new java.util.HashMap<>();

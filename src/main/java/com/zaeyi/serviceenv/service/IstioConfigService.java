@@ -27,6 +27,9 @@ public class IstioConfigService {
     private final ServiceDiscoveryService serviceDiscoveryService;
 
     public void configureIstio(ServiceEnv serviceEnv, List<ServiceEnvStatus.ServiceInfo> services) {
+        if (serviceEnv.getMetadata() == null || serviceEnv.getSpec() == null) {
+            throw new IllegalArgumentException("ServiceEnv must have metadata and spec");
+        }
         String envName = serviceEnv.getSpec().getEnvName();
         String namespace = serviceEnv.getMetadata().getNamespace();
         String fallbackEnv = serviceEnv.getSpec().getFallbackEnv();
@@ -160,6 +163,9 @@ public class IstioConfigService {
 
     private ObjectMeta createMetadata(String name, String namespace, String envName,
                                       String serviceName, ServiceEnv owner) {
+        if (owner.getMetadata() == null) {
+            throw new IllegalArgumentException("ServiceEnv owner must have metadata");
+        }
         Map<String, String> labels = new HashMap<>();
         labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/env", envName);
         labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName);

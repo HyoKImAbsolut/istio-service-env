@@ -21,8 +21,10 @@ public class DeploymentReconciler implements Reconciler<Deployment> {
 
     @Override
     public UpdateControl<Deployment> reconcile(Deployment deployment, Context<Deployment> context) {
+        if (deployment.getMetadata() == null) {
+            return UpdateControl.noUpdate();
+        }
         Map<String, String> labels = deployment.getMetadata().getLabels();
-        
         if (labels == null || !labels.containsKey(OperatorConstants.ENV_LABEL_KEY)) {
             return UpdateControl.noUpdate();
         }
@@ -44,7 +46,7 @@ public class DeploymentReconciler implements Reconciler<Deployment> {
                     .withName(envName)
                     .get();
 
-            if (serviceEnv != null) {
+            if (serviceEnv != null && serviceEnv.getMetadata() != null) {
                 Map<String, String> annotations = serviceEnv.getMetadata().getAnnotations();
                 if (annotations == null) {
                     annotations = new java.util.HashMap<>();
