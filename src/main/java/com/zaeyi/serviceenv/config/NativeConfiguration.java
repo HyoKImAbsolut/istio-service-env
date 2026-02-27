@@ -7,6 +7,10 @@ import io.fabric8.istio.api.networking.v1.DestinationRule;
 import io.fabric8.istio.api.networking.v1.VirtualService;
 import io.fabric8.kubernetes.api.model.AnyType;
 import io.fabric8.kubernetes.api.model.IntOrString;
+import io.fabric8.kubernetes.api.model.Pod;
+import io.fabric8.kubernetes.api.model.PodList;
+import io.fabric8.kubernetes.api.model.apps.Deployment;
+import io.fabric8.kubernetes.api.model.apps.DeploymentList;
 import io.fabric8.kubernetes.client.VersionInfo;
 import io.fabric8.kubernetes.client.impl.KubernetesClientImpl;
 import io.fabric8.kubernetes.internal.KubernetesDeserializer;
@@ -14,6 +18,7 @@ import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.context.annotation.ImportRuntimeHints;
 
 import java.util.Arrays;
@@ -26,6 +31,33 @@ import java.util.List;
  */
 @Configuration
 @ImportRuntimeHints(NativeConfiguration.NativeHints.class)
+@RegisterReflectionForBinding({
+        ServiceEnv.class,
+        ServiceEnvSpec.class,
+        ServiceEnvStatus.class,
+        VirtualService.class,
+        DestinationRule.class,
+        Pod.class,
+        PodList.class,
+        Deployment.class,
+        DeploymentList.class,
+        io.fabric8.kubernetes.api.model.Service.class,
+        io.fabric8.kubernetes.api.model.ServiceList.class,
+        io.fabric8.kubernetes.api.model.Namespace.class,
+        io.fabric8.kubernetes.api.model.NamespaceList.class,
+        io.fabric8.kubernetes.api.model.ConfigMap.class,
+        io.fabric8.kubernetes.api.model.ConfigMapList.class,
+        io.fabric8.kubernetes.api.model.Secret.class,
+        io.fabric8.kubernetes.api.model.SecretList.class,
+        io.fabric8.kubernetes.api.model.Event.class,
+        io.fabric8.kubernetes.api.model.EventList.class,
+        io.fabric8.kubernetes.api.model.apps.ReplicaSet.class,
+        io.fabric8.kubernetes.api.model.apps.ReplicaSetList.class,
+        io.fabric8.kubernetes.api.model.PersistentVolumeClaim.class,
+        io.fabric8.kubernetes.api.model.PersistentVolumeClaimList.class,
+        io.fabric8.kubernetes.api.model.ServiceAccount.class,
+        io.fabric8.kubernetes.api.model.ServiceAccountList.class
+})
 public class NativeConfiguration {
 
     private static final MemberCategory[] CONSTRUCTOR_AND_METHODS = {
@@ -35,6 +67,7 @@ public class NativeConfiguration {
 
     private static final MemberCategory[] FULL_REFLECTION = {
             MemberCategory.INVOKE_PUBLIC_CONSTRUCTORS,
+            MemberCategory.INVOKE_DECLARED_CONSTRUCTORS,
             MemberCategory.INVOKE_PUBLIC_METHODS,
             MemberCategory.INVOKE_DECLARED_METHODS
     };
@@ -51,12 +84,11 @@ public class NativeConfiguration {
             registerResources(hints);
         }
 
+        /**
+         * Istio 类型需要 INVOKE_DECLARED_METHODS，@RegisterReflectionForBinding 的 binding 粒度不足。
+         */
         private void registerCustomResourceTypes(RuntimeHints hints) {
             hints.reflection()
-                    .registerType(ServiceEnv.class, hint -> hint.withMembers(CONSTRUCTOR_AND_METHODS))
-                    .registerType(ServiceEnvSpec.class, hint -> hint.withMembers(CONSTRUCTOR_AND_METHODS))
-                    .registerType(ServiceEnvStatus.class, hint -> hint.withMembers(CONSTRUCTOR_AND_METHODS))
-                    .registerType(ServiceEnvStatus.ServiceInfo.class, hint -> hint.withMembers(CONSTRUCTOR_AND_METHODS))
                     .registerType(VirtualService.class, hint -> hint.withMembers(FULL_REFLECTION))
                     .registerType(DestinationRule.class, hint -> hint.withMembers(FULL_REFLECTION));
         }
@@ -128,104 +160,17 @@ public class NativeConfiguration {
             implClasses.forEach(className -> registerTypeIfPresent(hints, className, CONSTRUCTOR_AND_METHODS));
         }
 
+        /**
+         * 补充 @RegisterReflectionForBinding 无法覆盖的类型：
+         * - Jackson Deserializer/Serializer（非绑定目标，Jackson 内部反射实例化）
+         * - DefaultKubernetesResourceList（泛型列表反序列化）
+         * - Config 等非 model 类型
+         */
         private void registerFabric8ModelTypes(RuntimeHints hints) {
-            List<String> modelClasses = Arrays.asList(
-                    "io.fabric8.kubernetes.api.model.Pod",
-                    "io.fabric8.kubernetes.api.model.PodList",
-                    "io.fabric8.kubernetes.api.model.PodSpec",
-                    "io.fabric8.kubernetes.api.model.PodStatus",
-                    "io.fabric8.kubernetes.api.model.PodListBuilder",
-                    "io.fabric8.kubernetes.api.model.Service",
-                    "io.fabric8.kubernetes.api.model.ServiceList",
-                    "io.fabric8.kubernetes.api.model.ServiceSpec",
-                    "io.fabric8.kubernetes.api.model.ServicePort",
-                    "io.fabric8.kubernetes.api.model.Deployment",
-                    "io.fabric8.kubernetes.api.model.DeploymentList",
-                    "io.fabric8.kubernetes.api.model.DeploymentSpec",
-                    "io.fabric8.kubernetes.api.model.DeploymentStatus",
-                    "io.fabric8.kubernetes.api.model.Namespace",
-                    "io.fabric8.kubernetes.api.model.NamespaceList",
-                    "io.fabric8.kubernetes.api.model.ConfigMap",
-                    "io.fabric8.kubernetes.api.model.ConfigMapList",
-                    "io.fabric8.kubernetes.api.model.Secret",
-                    "io.fabric8.kubernetes.api.model.SecretList",
-                    "io.fabric8.kubernetes.api.model.Event",
-                    "io.fabric8.kubernetes.api.model.EventList",
-                    "io.fabric8.kubernetes.api.model.ObjectMeta",
-                    "io.fabric8.kubernetes.api.model.OwnerReference",
-                    "io.fabric8.kubernetes.api.model.ListMeta",
-                    "io.fabric8.kubernetes.api.model.Status",
-                    "io.fabric8.kubernetes.api.model.StatusDetails",
-                    "io.fabric8.kubernetes.api.model.PreferredSchedulingTerm",
-                    "io.fabric8.kubernetes.api.model.NodeSelector",
-                    "io.fabric8.kubernetes.api.model.NodeSelectorTerm",
-                    "io.fabric8.kubernetes.api.model.NodeSelectorRequirement",
-                    "io.fabric8.kubernetes.api.model.Container",
-                    "io.fabric8.kubernetes.api.model.ContainerPort",
-                    "io.fabric8.kubernetes.api.model.EnvVar",
-                    "io.fabric8.kubernetes.api.model.EnvVarSource",
-                    "io.fabric8.kubernetes.api.model.PodTemplateSpec",
-                    "io.fabric8.kubernetes.api.model.LabelSelector",
-                    "io.fabric8.kubernetes.api.model.LabelSelectorRequirement",
-                    "io.fabric8.kubernetes.api.model.ReplicationControllerSpec",
-                    "io.fabric8.kubernetes.api.model.ReplicationControllerStatus",
-                    "io.fabric8.kubernetes.api.model.ReplicaSet",
-                    "io.fabric8.kubernetes.api.model.ReplicaSetList",
-                    "io.fabric8.kubernetes.api.model.ReplicaSetSpec",
-                    "io.fabric8.kubernetes.api.model.ReplicaSetStatus",
-                    "io.fabric8.kubernetes.api.model.ConfigMapEnvSource",
-                    "io.fabric8.kubernetes.api.model.ConfigMapKeySelector",
-                    "io.fabric8.kubernetes.api.model.ExecAction",
-                    "io.fabric8.kubernetes.api.model.HTTPGetAction",
-                    "io.fabric8.kubernetes.api.model.HTTPHeader",
-                    "io.fabric8.kubernetes.api.model.TCPSocketAction",
-                    "io.fabric8.kubernetes.api.model.Probe",
-                    "io.fabric8.kubernetes.api.model.Lifecycle",
-                    "io.fabric8.kubernetes.api.model.LifecycleHandler",
-                    "io.fabric8.kubernetes.api.model.ResourceRequirements",
-                    "io.fabric8.kubernetes.api.model.Quantity",
-                    "io.fabric8.kubernetes.api.model.SecurityContext",
-                    "io.fabric8.kubernetes.api.model.Capabilities",
-                    "io.fabric8.kubernetes.api.model.PodSecurityContext",
-                    "io.fabric8.kubernetes.api.model.Volume",
-                    "io.fabric8.kubernetes.api.model.VolumeMount",
-                    "io.fabric8.kubernetes.api.model.EmptyDirVolumeSource",
-                    "io.fabric8.kubernetes.api.model.ConfigMapVolumeSource",
-                    "io.fabric8.kubernetes.api.model.SecretVolumeSource",
-                    "io.fabric8.kubernetes.api.model.ConfigMapProjection",
-                    "io.fabric8.kubernetes.api.model.SecretProjection",
-                    "io.fabric8.kubernetes.api.model.DownwardAPIProjection",
-                    "io.fabric8.kubernetes.api.model.DownwardAPIVolumeSource",
-                    "io.fabric8.kubernetes.api.model.DownwardAPIVolumeFile",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaimVolumeSource",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaim",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaimList",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaimSpec",
-                    "io.fabric8.kubernetes.api.model.PersistentVolumeClaimStatus",
-                    "io.fabric8.kubernetes.api.model.ServiceAccount",
-                    "io.fabric8.kubernetes.api.model.ServiceAccountList",
-                    "io.fabric8.kubernetes.api.model.LocalObjectReference",
-                    "io.fabric8.kubernetes.api.model.Toleration",
-                    "io.fabric8.kubernetes.api.model.Affinity",
-                    "io.fabric8.kubernetes.api.model.PodAffinity",
-                    "io.fabric8.kubernetes.api.model.PodAntiAffinity",
-                    "io.fabric8.kubernetes.api.model.PodAffinityTerm",
-                    "io.fabric8.kubernetes.api.model.WeightedPodAffinityTerm",
-                    "io.fabric8.kubernetes.api.model.NodeAffinity",
-                    "io.fabric8.kubernetes.api.model.NodeSelector",
-                    "io.fabric8.kubernetes.api.model.NodeSelectorTerm",
-                    "io.fabric8.kubernetes.api.model.NodeSelectorRequirement",
-                    "io.fabric8.kubernetes.api.model.LoadBalancerStatus",
-                    "io.fabric8.kubernetes.api.model.LoadBalancerIngress",
-                    "io.fabric8.kubernetes.api.model.PodCondition",
-                    "io.fabric8.kubernetes.api.model.PodConditionBuilder",
-                    "io.fabric8.kubernetes.api.model.ContainerState",
-                    "io.fabric8.kubernetes.api.model.ContainerStateRunning",
-                    "io.fabric8.kubernetes.api.model.ContainerStateTerminated",
-                    "io.fabric8.kubernetes.api.model.ContainerStateWaiting",
-                    "io.fabric8.kubernetes.api.model.DeploymentCondition",
-                    "io.fabric8.kubernetes.api.model.DeploymentConditionBuilder",
-                    "io.fabric8.kubernetes.api.model.Condition",
+            List<String> supplementClasses = Arrays.asList(
+                    "io.fabric8.kubernetes.api.model.Quantity$Deserializer",
+                    "io.fabric8.kubernetes.api.model.Quantity$Serializer",
+                    "io.fabric8.kubernetes.api.model.DefaultKubernetesResourceList",
                     "io.fabric8.kubernetes.client.Config",
                     "io.fabric8.kubernetes.client.ConfigBuilder",
                     "io.fabric8.kubernetes.client.Config$ExecCredential",
@@ -234,7 +179,7 @@ public class NativeConfiguration {
                     "io.fabric8.kubernetes.client.utils.OpenIDConnectionUtils$OpenIdConfiguration",
                     "io.fabric8.kubernetes.client.utils.OpenIDConnectionUtils$OAuthToken"
             );
-            modelClasses.forEach(className -> registerTypeIfPresent(hints, className, FULL_REFLECTION));
+            supplementClasses.forEach(className -> registerTypeIfPresent(hints, className, FULL_REFLECTION));
         }
 
         private void registerJosdkTypes(RuntimeHints hints) {
