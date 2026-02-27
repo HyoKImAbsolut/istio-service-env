@@ -39,8 +39,8 @@ public class ServiceDiscoveryService {
 
         for (Deployment deployment : deployments) {
             String serviceName = deployment.getMetadata().getName();
-            String version = deployment.getMetadata().getLabels()
-                    .getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default");
+            Map<String, String> labels = deployment.getMetadata().getLabels();
+            String version = labels != null ? labels.getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default") : "default";
 
             ServiceEnvStatus.ServiceInfo serviceInfo = new ServiceEnvStatus.ServiceInfo();
             serviceInfo.setName(serviceName);
@@ -62,9 +62,9 @@ public class ServiceDiscoveryService {
                 .getItems();
 
         Map<String, List<Pod>> podsByService = pods.stream()
-                .filter(pod -> pod.getMetadata().getLabels().containsKey("app"))
-                .collect(Collectors.groupingBy(pod -> 
-                        pod.getMetadata().getLabels().get("app")));
+                .filter(pod -> pod.getMetadata() != null && pod.getMetadata().getLabels() != null
+                        && pod.getMetadata().getLabels().containsKey("app"))
+                .collect(Collectors.groupingBy(pod -> pod.getMetadata().getLabels().get("app")));
 
         for (Map.Entry<String, List<Pod>> entry : podsByService.entrySet()) {
             String serviceName = entry.getKey();
@@ -75,9 +75,10 @@ public class ServiceDiscoveryService {
                 serviceInfo.setName(serviceName);
                 serviceInfo.setNamespace(namespace);
                 serviceInfo.setPodCount(servicePods.size());
-                
-                String version = servicePods.get(0).getMetadata().getLabels()
-                        .getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default");
+
+                Map<String, String> podLabels = servicePods.get(0).getMetadata() != null
+                        ? servicePods.get(0).getMetadata().getLabels() : null;
+                String version = podLabels != null ? podLabels.getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default") : "default";
                 serviceInfo.setVersion(version);
 
                 serviceMap.put(serviceName, serviceInfo);

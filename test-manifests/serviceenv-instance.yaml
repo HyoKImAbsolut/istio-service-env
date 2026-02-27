@@ -1,0 +1,10 @@
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: canary-env
+  namespace: httpbin-demo
+spec:
+  envName: canary
+  fallbackEnv: ""
+  description: "Canary environment for httpbin testing"
+  enabled: true
