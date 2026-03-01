@@ -4,19 +4,14 @@ import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
 
-import io.fabric8.istio.api.api.networking.v1alpha3.*;
-import io.fabric8.istio.api.networking.v1.DestinationRule;
-import io.fabric8.istio.api.networking.v1.DestinationRuleBuilder;
-import io.fabric8.istio.api.networking.v1.VirtualService;
-import io.fabric8.istio.api.networking.v1.VirtualServiceBuilder;
 import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.*;
-import java.util.stream.Collectors;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 配置 Istio VirtualService、DestinationRule。
@@ -29,34 +24,7 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class IstioConfigService {
 
-    private static final String MANAGED_BY = "serviceenv-operator";
-
     private final KubernetesClient kubernetesClient;
-
-    /** 增量：仅配置单个 service 的 DR、VS */
-    public void configureServiceForIstio(String namespace, String serviceName, Set<String> envs, String fallbackEnv) {
-        if (namespace == null || serviceName == null || envs == null) {
-            throw new IllegalArgumentException("namespace, serviceName, envs required");
-        }
-        if (envs.isEmpty()) {
-            deleteServiceResources(namespace, serviceName);
-            return;
-        }
-        createOrUpdateDestinationRule(namespace, serviceName, envs);
-        createOrUpdateVirtualService(namespace, serviceName, envs, fallbackEnv);
-    }
-
-    private void deleteServiceResources(String namespace, String serviceName) {
-        try {
-            kubernetesClient.resources(io.fabric8.istio.api.networking.v1.VirtualService.class)
-                    .inNamespace(namespace).withName(serviceName + "-vs").delete();
-            kubernetesClient.resources(io.fabric8.istio.api.networking.v1.DestinationRule.class)
-                    .inNamespace(namespace).withName(serviceName + "-dr").delete();
-            log.debug("Deleted VS/DR for {}/{}", namespace, serviceName);
-        } catch (Exception e) {
-            log.debug("Delete VS/DR {}/{}: {}", namespace, serviceName, e.getMessage());
-        }
-    }
 
     /**
      * 增量：添加或更新单个 service 到 ServiceEnv status。
@@ -139,6 +107,19 @@ public class IstioConfigService {
         kubernetesClient.resource(se).updateStatus();
     }
 
+    /** 约定：ServiceEnv metadata.name == spec.envName。检查对应 env 的 ServiceEnv 是否存在且启用。 */
+    public boolean serviceEnvExists(String namespace, String envName) {
+        if (namespace == null || envName == null || envName.isEmpty()) return false;
+        try {
+            ServiceEnv se = kubernetesClient.resources(ServiceEnv.class).inNamespace(namespace).withName(envName).get();
+            return se != null && se.getSpec() != null && envName.equals(se.getSpec().getEnvName())
+                    && Boolean.TRUE.equals(se.getSpec().getEnabled());
+        } catch (Exception e) {
+            log.debug("Check ServiceEnv {}/{} failed: {}", namespace, envName, e.getMessage());
+            return false;
+        }
+    }
+
     public String getFallbackEnvFromNamespace(String namespace) {
         try {
             Namespace ns = kubernetesClient.namespaces().withName(namespace).get();
@@ -150,89 +131,4 @@ public class IstioConfigService {
         }
         return null;
     }
-
-    private void createOrUpdateDestinationRule(String namespace, String serviceName, Set<String> envs) {
-        List<Subset> subsets = envs.stream()
-                .map(env -> new SubsetBuilder()
-                        .withName(env)
-                        .withLabels(Map.of(OperatorConstants.ENV_LABEL_KEY, env))
-                        .build())
-                .toList();
-
-        var dr = new DestinationRuleBuilder()
-                .withNewMetadata()
-                    .withName(serviceName + "-dr")
-                    .withNamespace(namespace)
-                    .addToLabels(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName)
-                    .addToLabels("app.kubernetes.io/managed-by", MANAGED_BY)
-                .endMetadata()
-                .withNewSpec()
-                    .withHost(serviceName)
-                    .withSubsets(subsets)
-                .endSpec()
-                .build();
-
-        apply(kubernetesClient.resources(DestinationRule.class).inNamespace(namespace).resource(dr),
-                "DestinationRule", namespace, serviceName + "-dr");
-    }
-
-    private void createOrUpdateVirtualService(String namespace, String serviceName,
-            Set<String> envs, String fallbackEnv) {
-        List<HTTPRoute> routes = envs.stream()
-                .map(env -> buildEnvRoute(serviceName, env))
-                .collect(Collectors.toCollection(ArrayList::new));
-
-        if (fallbackEnv != null && !fallbackEnv.isEmpty()) {
-            routes.add(buildCatchAllRoute(serviceName, fallbackEnv));
-        }
-
-        var vs = new VirtualServiceBuilder()
-                .withNewMetadata()
-                    .withName(serviceName + "-vs")
-                    .withNamespace(namespace)
-                    .addToLabels(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName)
-                    .addToLabels("app.kubernetes.io/managed-by", MANAGED_BY)
-                .endMetadata()
-                .withNewSpec()
-                    .withHosts(List.of(serviceName))
-                    .withHttp(routes)
-                .endSpec()
-                .build();
-
-        apply(kubernetesClient.resources(VirtualService.class).inNamespace(namespace).resource(vs),
-                "VirtualService", namespace, serviceName + "-vs");
-    }
-
-    private <T> void apply(io.fabric8.kubernetes.client.dsl.Resource<T> resource, String kind, String namespace, String name) {
-        try {
-            resource.createOr(r -> resource.update());
-            log.debug("Created/updated {} {}/{}", kind, namespace, name);
-        } catch (Exception e) {
-            log.error("Failed {} {}/{}", kind, namespace, name, e);
-            throw new RuntimeException("Failed to configure " + kind, e);
-        }
-    }
-
-    private HTTPRoute buildEnvRoute(String serviceName, String env) {
-        HTTPMatchRequest match = new HTTPMatchRequestBuilder()
-                .withHeaders(Map.of(OperatorConstants.ENV_HEADER_NAME, new StringMatch(new StringMatchExact(env))))
-                .build();
-        return new HTTPRouteBuilder()
-                .withMatch(List.of(match))
-                .withRoute(List.of(new HTTPRouteDestinationBuilder()
-                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(env).build())
-                        .withWeight(100)
-                        .build()))
-                .build();
-    }
-
-    private HTTPRoute buildCatchAllRoute(String serviceName, String fallbackEnv) {
-        return new HTTPRouteBuilder()
-                .withRoute(List.of(new HTTPRouteDestinationBuilder()
-                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(fallbackEnv).build())
-                        .withWeight(100)
-                        .build()))
-                .build();
-    }
-
 }

@@ -5,6 +5,7 @@ public class OperatorConstants {
     /** Deployment 声明加入的环境 */
     public static final String ENV_LABEL_KEY = "serviceenv.zaeyi.com/env";
     private static final String PREFIX = "serviceenv.zaeyi.com";
+    /** K8s 标准：app 名称，从 Pod template labels 读取 */
     public static final String APP_NAME_LABEL_KEY = "app.kubernetes.io/name";
     public static final String VERSION_LABEL_KEY = "app.kubernetes.io/version";
     public static final String ISTIO_INJECTION_LABEL = "istio-injection";

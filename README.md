@@ -5,6 +5,7 @@
 ## 核心特性
 
 - **环境隔离**：ServiceEnv 定义环境，Deployment 通过标签声明加入
+- **App CRD**：`serviceenv.zaeyi.com/app`，VS 和 DR 归属于 App，app 名称从 `app.kubernetes.io/name` 读取
 - **Namespace 级 Fallback**：通过 namespace 注解配置兜底 env，无匹配路由或 subset 无端点时 fallback
 - **全链路保持**：请求 header `x-service-env` 贯穿调用链
 - **自动化**：Operator 自动创建 VirtualService、DestinationRule、EnvoyFilter
@@ -20,12 +21,15 @@
 
 ## 工作原理
 
-| 资源变化 | 触发 |
-|---------|------|
-| Deployment(env=E) | ServiceEnv(envName=E) |
-| ServiceEnv 变更 | 自身 |
+| Reconciler | Primary | 职责 |
+|------------|---------|------|
+| **AppReconciler** | App | VS/DR 唯一写入者，按 app 增量 reconcile |
+| **ServiceEnvReconciler** | ServiceEnv | 仅更新 ServiceEnv status，不写 VS/DR |
 
-Reconcile 以 **namespace 为单位**：任意 ServiceEnv 或 Deployment 变化时，重建该 namespace 下所有 service 的 Istio 配置。
+App 需用户显式创建，Deployment 不创建 App，生命周期分离。
+
+- **App CRD**：`serviceenv.zaeyi.com/app`，`spec.appName` 必须与 Deployment 的 `app.kubernetes.io/name` 一致；`metadata.name` 为 App 自有名称
+- **VS/DR 归属**：通过 ownerReference 归属于 App，App 删除时自动级联删除
 
 ## 安装
 
@@ -85,9 +89,23 @@ spec:
   enabled: true
 ```
 
-### 3. 服务加入环境
+### 3. 创建 App
 
-Deployment 标签 `serviceenv.zaeyi.com/env: <envName>`，并设置 `app.kubernetes.io/name` 为 Service 名：
+App CR 需先于 Deployment 创建，`spec.appName` 必须与 Deployment 的 `app.kubernetes.io/name` 一致：
+
+```yaml
+apiVersion: serviceenv.zaeyi.com/v1
+kind: App
+metadata:
+  name: my-service
+  namespace: my-namespace
+spec:
+  appName: my-service
+```
+
+### 4. 服务加入环境
+
+Deployment 标签 `serviceenv.zaeyi.com/env: <envName>`，并设置 `app.kubernetes.io/name` 与 App 的 `spec.appName` 一致：
 
 ```yaml
 metadata:
@@ -101,7 +119,7 @@ spec:
         serviceenv.zaeyi.com/env: dev
 ```
 
-### 4. 请求
+### 5. 请求
 
 携带 header `x-service-env: <envName>`。
 
