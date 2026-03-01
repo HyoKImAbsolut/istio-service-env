@@ -21,8 +21,6 @@ public class ServiceEnvStatus {
         private String name;
         @JsonProperty("namespace")
         private String namespace;
-        @JsonProperty("podCount")
-        private Integer podCount;
         @JsonProperty("version")
         private String version;
     }

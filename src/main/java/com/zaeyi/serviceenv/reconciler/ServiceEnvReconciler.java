@@ -201,8 +201,6 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
             info.setName(serviceName);
             info.setNamespace(namespace);
             info.setVersion(version);
-            Integer replicas = d.getStatus() != null ? d.getStatus().getReadyReplicas() : 0;
-            info.setPodCount(replicas != null ? replicas : 0);
             servicesInEnv.add(info);
             serviceVersions.computeIfAbsent(serviceName, k -> new HashSet<>()).add(version);
         }

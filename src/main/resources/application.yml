@@ -20,6 +20,6 @@ operator:
 
 logging:
   level:
-    io.javaoperatorsdk: INFO
-    com.zaeyi.serviceenv: DEBUG
-    io.fabric8.kubernetes: INFO
+    "[io.javaoperatorsdk]": INFO
+    "[com.zaeyi.serviceenv]": DEBUG
+    "[io.fabric8.kubernetes]": INFO
