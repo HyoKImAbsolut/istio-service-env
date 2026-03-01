@@ -1,7 +1,7 @@
-# 简单示例：创建一个开发环境和一个生产环境
-
+# 简单示例：prod、base、dev 三环境，仅 dev fallback 到 base
+#
 ---
-# 生产环境
+# 生产环境（无 fallback）
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
 metadata:
@@ -13,7 +13,19 @@ spec:
   enabled: true
 
 ---
-# 开发环境，fallback到生产
+# 基准环境（无 fallback）
+apiVersion: serviceenv.zaeyi.com/v1
+kind: ServiceEnv
+metadata:
+  name: base
+  namespace: default
+spec:
+  envName: base
+  description: "基准环境"
+  enabled: true
+
+---
+# 开发环境，fallback 到 base
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
 metadata:
@@ -21,9 +33,39 @@ metadata:
   namespace: default
 spec:
   envName: dev
-  fallbackEnv: prod
+  fallbackEnv: base
   description: "开发环境"
   enabled: true
+
+---
+# 部署 base 版本（dev fallback 目标）
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service-base
+  namespace: default
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+      version: v1
+      serviceenv.zaeyi.com/env: base
+  template:
+    metadata:
+      labels:
+        app: order-service
+        version: v1
+        serviceenv.zaeyi.com/env: base
+    spec:
+      containers:
+        - name: order-service
+          image: your-registry/order-service:v1
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ENV
+              value: "base"
 
 ---
 # 部署生产版本的服务
@@ -38,13 +80,13 @@ spec:
     matchLabels:
       app: order-service
       version: v1
-      serviceenv.zaeyi.com/service-env: prod
+      serviceenv.zaeyi.com/env: prod
   template:
     metadata:
       labels:
         app: order-service
         version: v1
-        serviceenv.zaeyi.com/service-env: prod
+        serviceenv.zaeyi.com/env: prod
     spec:
       containers:
         - name: order-service
@@ -68,13 +110,13 @@ spec:
     matchLabels:
       app: order-service
       version: v2-dev
-      serviceenv.zaeyi.com/service-env: dev
+      serviceenv.zaeyi.com/env: dev
   template:
     metadata:
       labels:
         app: order-service
         version: v2-dev
-        serviceenv.zaeyi.com/service-env: dev
+        serviceenv.zaeyi.com/env: dev
     spec:
       containers:
         - name: order-service

@@ -9,7 +9,7 @@ public class ServiceEnvSpec {
     @JsonPropertyDescription("Unique environment name")
     private String envName;
     @JsonProperty("fallbackEnv")
-    @JsonPropertyDescription("Fallback environment name when service not found in current environment")
+    @JsonPropertyDescription("Fallback environment when service not in current env; each ServiceEnv can configure its own fallback")
     private String fallbackEnv;
     @JsonProperty("description")
     @JsonPropertyDescription("Description of this environment")

@@ -3,6 +3,7 @@ package com.zaeyi.serviceenv.service;
 import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
+import com.zaeyi.serviceenv.reconciler.ServiceEnvReconciler.ReconcilerInput;
 
 import io.fabric8.istio.api.api.networking.v1alpha3.*;
 import io.fabric8.istio.api.networking.v1.DestinationRule;
@@ -18,45 +19,83 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
+/**
+ * 配置 Istio VirtualService 和 DestinationRule。
+ * <p>主路由：为本环境服务创建 DR + VS（match x-service-env → subset）。
+ * <p>Fallback：为「fallback 有、本环境无」的服务创建 VS（match x-service-env → fallback subset）。
+ */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class IstioConfigService {
 
     private final KubernetesClient kubernetesClient;
-    private final ServiceDiscoveryService serviceDiscoveryService;
 
-    public void configureIstio(ServiceEnv serviceEnv, List<ServiceEnvStatus.ServiceInfo> services) {
+    /** 为本环境服务创建 DestinationRule 和主 VirtualService */
+    public void configureIstio(ServiceEnv serviceEnv, ReconcilerInput input) {
         if (serviceEnv.getMetadata() == null || serviceEnv.getSpec() == null) {
             throw new IllegalArgumentException("ServiceEnv must have metadata and spec");
         }
         String envName = serviceEnv.getSpec().getEnvName();
         String namespace = serviceEnv.getMetadata().getNamespace();
-        String fallbackEnv = serviceEnv.getSpec().getFallbackEnv();
 
-        log.info("Configuring Istio for environment: {} in namespace: {} with {} services", 
-                envName, namespace, services.size());
-        
-        for (ServiceEnvStatus.ServiceInfo serviceInfo : services) {
-            String serviceName = serviceInfo.getName();
-            createOrUpdateDestinationRule(serviceEnv, namespace, serviceName, envName, serviceInfo.getVersion());
-            createOrUpdateVirtualService(serviceEnv, namespace, serviceName, envName, fallbackEnv);
+        log.info("Configuring Istio for environment: {} in namespace: {} services: {}",
+                envName, namespace, input.servicesInEnv().size());
+
+        for (ServiceEnvStatus.ServiceInfo svc : input.servicesInEnv()) {
+            String serviceName = svc.getName();
+            if (serviceName == null || serviceName.isEmpty()) {
+                continue;
+            }
+            Set<String> versions = input.serviceVersions().getOrDefault(serviceName, Set.of());
+            createOrUpdateDestinationRule(serviceEnv, namespace, serviceName, envName, versions);
+            createOrUpdateVirtualService(serviceEnv, namespace, serviceName, envName, envName);
         }
 
         log.info("Istio configuration completed for environment: {}", envName);
     }
 
+    /** 为「fallback 有、本环境无」的服务创建 fallback VS，路由到 fallback subset */
+    public void configureFallbackForSelf(ServiceEnv me, ReconcilerInput myInput, ReconcilerInput fallbackInput,
+                                         String fallbackEnv) {
+        if (fallbackEnv == null || fallbackEnv.isEmpty()) {
+            return;
+        }
+        String myEnvName = me.getSpec().getEnvName();
+        String namespace = me.getMetadata().getNamespace();
 
-    private void createOrUpdateDestinationRule(ServiceEnv owner, String namespace, String serviceName, 
-                                                String envName, String version) {
+        Set<String> myServices = myInput.servicesInEnv().stream()
+                .map(ServiceEnvStatus.ServiceInfo::getName)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        int count = 0;
+        for (ServiceEnvStatus.ServiceInfo svc : fallbackInput.servicesInEnv()) {
+            String serviceName = svc.getName();
+            if (serviceName == null || serviceName.isEmpty() || myServices.contains(serviceName)) {
+                continue;
+            }
+            createOrUpdateVirtualService(me, namespace, serviceName, myEnvName, fallbackEnv);
+            count++;
+        }
+        if (count > 0) {
+            log.info("Configured fallback VirtualServices for {} services in env: {} -> {}",
+                    count, myEnvName, fallbackEnv);
+        }
+    }
+
+    // --- DR / VS 创建 ---
+
+    private void createOrUpdateDestinationRule(ServiceEnv owner, String namespace, String serviceName,
+                                                String envName, Set<String> versions) {
         String drName = String.format("%s-%s-dr", serviceName, envName);
-        Set<String> versions = serviceDiscoveryService.getServiceVersions(namespace, serviceName, envName);
 
+        List<Subset> subsets = createSubsets(envName, versions);
         DestinationRule destinationRule = new DestinationRuleBuilder()
                 .withMetadata(createMetadata(drName, namespace, envName, serviceName, owner))
                 .withNewSpec()
                     .withHost(serviceName)
-                    .withSubsets(createSubsets(envName, versions))
+                    .withSubsets(subsets)
                 .endSpec()
                 .build();
 
@@ -85,54 +124,30 @@ public class IstioConfigService {
         }
     }
 
-    private void createOrUpdateVirtualService(ServiceEnv owner, String namespace, String serviceName, 
-                                               String envName, String fallbackEnv) {
+    /** envName=匹配的 header，targetSubset=路由目标 subset */
+    private void createOrUpdateVirtualService(ServiceEnv owner, String namespace, String serviceName,
+                                               String envName, String targetSubset) {
         String vsName = String.format("%s-%s-vs", serviceName, envName);
-        List<HTTPRoute> httpRoutes = new ArrayList<>();
-        
-        // 主路由 - 使用Builder模式
-        HTTPRoute primaryRoute = new HTTPRouteBuilder()
-                .withMatch(Collections.singletonList(
-                    new HTTPMatchRequest()
-                ))
+
+        HTTPMatchRequest match = createHeaderMatch(envName);
+        HTTPRoute route = new HTTPRouteBuilder()
+                .withMatch(Collections.singletonList(match))
                 .withRoute(Collections.singletonList(
                     new HTTPRouteDestinationBuilder()
                         .withDestination(new DestinationBuilder()
                             .withHost(serviceName)
-                            .withSubset(envName)
+                            .withSubset(targetSubset)
                             .build())
                         .withWeight(100)
                         .build()
                 ))
                 .build();
-        
-        httpRoutes.add(primaryRoute);
-
-        if (fallbackEnv != null && !fallbackEnv.isEmpty()) {
-            // Fallback路由
-            HTTPRoute fallbackRoute = new HTTPRouteBuilder()
-                    .withMatch(Collections.singletonList(
-                        new HTTPMatchRequest()
-                    ))
-                    .withRoute(Collections.singletonList(
-                        new HTTPRouteDestinationBuilder()
-                            .withDestination(new DestinationBuilder()
-                                .withHost(serviceName)
-                                .withSubset(fallbackEnv)
-                                .build())
-                            .withWeight(100)
-                            .build()
-                    ))
-                    .build();
-            
-            httpRoutes.add(fallbackRoute);
-        }
 
         VirtualService virtualService = new VirtualServiceBuilder()
                 .withMetadata(createMetadata(vsName, namespace, envName, serviceName, owner))
                 .withNewSpec()
                     .withHosts(Collections.singletonList(serviceName))
-                    .withHttp(httpRoutes)
+                    .withHttp(Collections.singletonList(route))
                 .endSpec()
                 .build();
 
@@ -183,6 +198,16 @@ public class IstioConfigService {
                     .withController(true)
                     .withBlockOwnerDeletion(true)
                     .build())
+                .build();
+    }
+
+    /** 匹配 header x-service-env: envName */
+    private HTTPMatchRequest createHeaderMatch(String envName) {
+        StringMatch stringMatch = new StringMatch(new StringMatchExact(envName));
+        Map<String, StringMatch> headers = new HashMap<>();
+        headers.put(OperatorConstants.ENV_HEADER_NAME, stringMatch);
+        return new HTTPMatchRequestBuilder()
+                .withHeaders(headers)
                 .build();
     }
 
