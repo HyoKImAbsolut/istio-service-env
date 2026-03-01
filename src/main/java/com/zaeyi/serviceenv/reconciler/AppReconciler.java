@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
  * App Reconciler：使用 @Workflow 管理 VS/DR，DependentResource 通过 {@link com.zaeyi.serviceenv.service.IstioConfigServiceHolder} 获取依赖。
  */
 @Component
-@DependsOn("istioConfigServiceHolderConfig")
+@DependsOn("istioConfigServiceHolder")
 @Workflow(dependents = {
         @Dependent(type = DestinationRuleDependentResource.class),
         @Dependent(type = VirtualServiceDependentResource.class)
