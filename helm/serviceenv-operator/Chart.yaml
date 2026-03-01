@@ -2,8 +2,8 @@ apiVersion: v2
 name: serviceenv-operator
 description: A Kubernetes operator for managing service environments with Istio
 type: application
-version: 0.9.0
-appVersion: "0.9.0"
+version: 0.9.1
+appVersion: "0.9.1"
 keywords:
   - kubernetes
   - operator
