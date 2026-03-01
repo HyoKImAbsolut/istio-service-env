@@ -10,7 +10,7 @@ import org.springframework.context.annotation.Configuration;
  * 本类作为 @Configuration，构造时注入 IstioConfigService 到静态 instance，供 DependentResource 使用。
  */
 @Configuration
-public final class IstioConfigServiceHolder {
+public class IstioConfigServiceHolder {
 
     private static volatile IstioConfigService instance;
 
