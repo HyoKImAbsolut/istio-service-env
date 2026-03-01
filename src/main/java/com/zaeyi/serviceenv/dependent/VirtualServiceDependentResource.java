@@ -1,34 +1,34 @@
 package com.zaeyi.serviceenv.dependent;
 
 import com.zaeyi.serviceenv.crd.App;
-import com.zaeyi.serviceenv.service.IstioConfigService;
+import com.zaeyi.serviceenv.service.IstioConfigServiceHolder;
 import io.fabric8.istio.api.networking.v1.VirtualService;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.ReconcileResult;
 import io.javaoperatorsdk.operator.processing.dependent.Matcher;
-import org.springframework.stereotype.Component;
+import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
 
 import java.util.Set;
 
 /**
  * VirtualService DependentResource，ownerReference 由 SDK 自动添加。
+ * JOSDK 通过反射创建，无法注入 Spring bean，故通过 {@link IstioConfigServiceHolder} 获取 IstioConfigService。
  */
-@Component
-public class VirtualServiceDependentResource extends AbstractIstioDependentResource<VirtualService> {
+public class VirtualServiceDependentResource extends CRUDKubernetesDependentResource<VirtualService, App> {
 
-    public VirtualServiceDependentResource(IstioConfigService istioConfigService) {
-        super(VirtualService.class, istioConfigService);
+    public VirtualServiceDependentResource() {
+        super(VirtualService.class);
     }
 
     @Override
     protected VirtualService desired(App primary, Context<App> context) {
-        Set<String> envs = computeEnvs(primary, context);
-        if (envs.isEmpty()) return null;
+        Set<String> environmentNames = IstioConfigServiceHolder.get().computeEnvironmentNamesForApp(primary);
+        if (environmentNames.isEmpty()) return null;
 
         String namespace = primary.getMetadata().getNamespace();
         String appName = primary.getSpec().getAppName();
-        String fallbackEnv = istioConfigService.getFallbackEnvFromNamespace(namespace);
-        return IstioResourceBuilder.buildVirtualService(namespace, appName, envs, fallbackEnv);
+        String fallbackEnvironment = IstioConfigServiceHolder.get().getFallbackEnvFromNamespace(namespace);
+        return IstioResourceBuilder.buildVirtualService(namespace, appName, environmentNames, fallbackEnvironment);
     }
 
     @Override

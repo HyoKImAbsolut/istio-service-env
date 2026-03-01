@@ -21,11 +21,11 @@ public final class IstioResourceBuilder {
 
     private IstioResourceBuilder() {}
 
-    public static DestinationRule buildDestinationRule(String namespace, String serviceName, Set<String> envs) {
-        List<Subset> subsets = envs.stream()
-                .map(env -> new SubsetBuilder()
-                        .withName(env)
-                        .withLabels(Map.of(OperatorConstants.ENV_LABEL_KEY, env))
+    public static DestinationRule buildDestinationRule(String namespace, String serviceName, Set<String> environmentNames) {
+        List<Subset> subsets = environmentNames.stream()
+                .map(environmentName -> new SubsetBuilder()
+                        .withName(environmentName)
+                        .withLabels(Map.of(OperatorConstants.ENV_LABEL_KEY, environmentName))
                         .build())
                 .toList();
 
@@ -44,13 +44,13 @@ public final class IstioResourceBuilder {
     }
 
     public static VirtualService buildVirtualService(String namespace, String serviceName,
-            Set<String> envs, String fallbackEnv) {
-        List<HTTPRoute> routes = envs.stream()
-                .map(env -> buildEnvRoute(serviceName, env))
+            Set<String> environmentNames, String fallbackEnvironment) {
+        List<HTTPRoute> routes = environmentNames.stream()
+                .map(environmentName -> buildEnvRoute(serviceName, environmentName))
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        if (fallbackEnv != null && !fallbackEnv.isEmpty()) {
-            routes.add(buildCatchAllRoute(serviceName, fallbackEnv));
+        if (fallbackEnvironment != null && !fallbackEnvironment.isEmpty()) {
+            routes.add(buildCatchAllRoute(serviceName, fallbackEnvironment));
         }
 
         return new VirtualServiceBuilder()
@@ -67,23 +67,23 @@ public final class IstioResourceBuilder {
                 .build();
     }
 
-    private static HTTPRoute buildEnvRoute(String serviceName, String env) {
+    private static HTTPRoute buildEnvRoute(String serviceName, String environmentName) {
         HTTPMatchRequest match = new HTTPMatchRequestBuilder()
-                .withHeaders(Map.of(OperatorConstants.ENV_HEADER_NAME, new StringMatch(new StringMatchExact(env))))
+                .withHeaders(Map.of(OperatorConstants.ENV_HEADER_NAME, new StringMatch(new StringMatchExact(environmentName))))
                 .build();
         return new HTTPRouteBuilder()
                 .withMatch(List.of(match))
                 .withRoute(List.of(new HTTPRouteDestinationBuilder()
-                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(env).build())
+                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(environmentName).build())
                         .withWeight(100)
                         .build()))
                 .build();
     }
 
-    private static HTTPRoute buildCatchAllRoute(String serviceName, String fallbackEnv) {
+    private static HTTPRoute buildCatchAllRoute(String serviceName, String fallbackEnvironment) {
         return new HTTPRouteBuilder()
                 .withRoute(List.of(new HTTPRouteDestinationBuilder()
-                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(fallbackEnv).build())
+                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(fallbackEnvironment).build())
                         .withWeight(100)
                         .build()))
                 .build();

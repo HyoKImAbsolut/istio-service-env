@@ -1,33 +1,33 @@
 package com.zaeyi.serviceenv.dependent;
 
 import com.zaeyi.serviceenv.crd.App;
-import com.zaeyi.serviceenv.service.IstioConfigService;
+import com.zaeyi.serviceenv.service.IstioConfigServiceHolder;
 import io.fabric8.istio.api.networking.v1.DestinationRule;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.ReconcileResult;
 import io.javaoperatorsdk.operator.processing.dependent.Matcher;
-import org.springframework.stereotype.Component;
+import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
 
 import java.util.Set;
 
 /**
  * DestinationRule DependentResource，ownerReference 由 SDK 自动添加。
+ * JOSDK 通过反射创建，无法注入 Spring bean，故通过 {@link IstioConfigServiceHolder} 获取 IstioConfigService。
  */
-@Component
-public class DestinationRuleDependentResource extends AbstractIstioDependentResource<DestinationRule> {
+public class DestinationRuleDependentResource extends CRUDKubernetesDependentResource<DestinationRule, App> {
 
-    public DestinationRuleDependentResource(IstioConfigService istioConfigService) {
-        super(DestinationRule.class, istioConfigService);
+    public DestinationRuleDependentResource() {
+        super(DestinationRule.class);
     }
 
     @Override
     protected DestinationRule desired(App primary, Context<App> context) {
-        Set<String> envs = computeEnvs(primary, context);
-        if (envs.isEmpty()) return null;
+        Set<String> environmentNames = IstioConfigServiceHolder.get().computeEnvironmentNamesForApp(primary);
+        if (environmentNames.isEmpty()) return null;
 
         String namespace = primary.getMetadata().getNamespace();
         String appName = primary.getSpec().getAppName();
-        return IstioResourceBuilder.buildDestinationRule(namespace, appName, envs);
+        return IstioResourceBuilder.buildDestinationRule(namespace, appName, environmentNames);
     }
 
     @Override

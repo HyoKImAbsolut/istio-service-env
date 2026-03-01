@@ -1,10 +1,12 @@
 package com.zaeyi.serviceenv.service;
 
 import com.zaeyi.serviceenv.constants.OperatorConstants;
+import com.zaeyi.serviceenv.crd.App;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
-
+import com.zaeyi.serviceenv.util.AppNameUtil;
 import io.fabric8.kubernetes.api.model.Namespace;
+import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,6 +14,9 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * 配置 Istio VirtualService、DestinationRule。
@@ -118,6 +123,23 @@ public class IstioConfigService {
             log.debug("Check ServiceEnv {}/{} failed: {}", namespace, envName, e.getMessage());
             return false;
         }
+    }
+
+    /** 计算 App 对应的有效环境名集合（Deployment 有 env 标签且 ServiceEnv 存在）。 */
+    public Set<String> computeEnvironmentNamesForApp(App primary) {
+        if (primary.getMetadata() == null || primary.getSpec() == null) return Set.of();
+        String namespace = primary.getMetadata().getNamespace();
+        String appName = primary.getSpec().getAppName();
+        if (namespace == null || appName == null || appName.isEmpty()) return Set.of();
+
+        return kubernetesClient.resources(Deployment.class).inNamespace(namespace).list().getItems().stream()
+                .filter(deployment -> deployment.getMetadata() != null && deployment.getMetadata().getLabels() != null)
+                .filter(deployment -> appName.equals(AppNameUtil.getAppName(deployment)))
+                .map(deployment -> deployment.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY))
+                .filter(Objects::nonNull)
+                .filter(envLabel -> !envLabel.isEmpty())
+                .filter(envName -> serviceEnvExists(namespace, envName))
+                .collect(Collectors.toSet());
     }
 
     public String getFallbackEnvFromNamespace(String namespace) {

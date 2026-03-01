@@ -20,6 +20,7 @@ import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfig
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.annotation.DependsOn;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -28,9 +29,10 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * App Reconciler：使用 Workflow 模式管理 VS/DR，依赖由框架自动 reconcile，event filtering 避免自触发。
+ * App Reconciler：使用 @Workflow 管理 VS/DR，DependentResource 通过 {@link com.zaeyi.serviceenv.service.IstioConfigServiceHolder} 获取依赖。
  */
 @Component
+@DependsOn("istioConfigServiceHolderConfig")
 @Workflow(dependents = {
         @Dependent(type = DestinationRuleDependentResource.class),
         @Dependent(type = VirtualServiceDependentResource.class)
