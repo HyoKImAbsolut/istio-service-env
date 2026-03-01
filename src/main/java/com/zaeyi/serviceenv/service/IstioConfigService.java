@@ -3,242 +3,236 @@ package com.zaeyi.serviceenv.service;
 import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
-import com.zaeyi.serviceenv.reconciler.ServiceEnvReconciler.ReconcilerInput;
 
 import io.fabric8.istio.api.api.networking.v1alpha3.*;
 import io.fabric8.istio.api.networking.v1.DestinationRule;
 import io.fabric8.istio.api.networking.v1.DestinationRuleBuilder;
 import io.fabric8.istio.api.networking.v1.VirtualService;
 import io.fabric8.istio.api.networking.v1.VirtualServiceBuilder;
-import io.fabric8.kubernetes.api.model.ObjectMeta;
-import io.fabric8.kubernetes.api.model.ObjectMetaBuilder;
+import io.fabric8.kubernetes.api.model.Namespace;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * 配置 Istio VirtualService 和 DestinationRule。
- * <p>主路由：为本环境服务创建 DR + VS（match x-service-env → subset）。
- * <p>Fallback：为「fallback 有、本环境无」的服务创建 VS（match x-service-env → fallback subset）。
+ * 配置 Istio VirtualService、DestinationRule。
+ *
+ * <p>每个 service 一个 DR、一个 VS。
+ * <p>VS：按 env 的路由 + 兜底 catch-all（从 namespace 注解读取 fallback env）。
  */
 @Service
 @Slf4j
 @RequiredArgsConstructor
 public class IstioConfigService {
 
+    private static final String MANAGED_BY = "serviceenv-operator";
+
     private final KubernetesClient kubernetesClient;
 
-    /** 为本环境服务创建 DestinationRule 和主 VirtualService */
-    public void configureIstio(ServiceEnv serviceEnv, ReconcilerInput input) {
-        if (serviceEnv.getMetadata() == null || serviceEnv.getSpec() == null) {
-            throw new IllegalArgumentException("ServiceEnv must have metadata and spec");
+    /** 增量：仅配置单个 service 的 DR、VS */
+    public void configureServiceForIstio(String namespace, String serviceName, Set<String> envs, String fallbackEnv) {
+        if (namespace == null || serviceName == null || envs == null) {
+            throw new IllegalArgumentException("namespace, serviceName, envs required");
         }
-        String envName = serviceEnv.getSpec().getEnvName();
-        String namespace = serviceEnv.getMetadata().getNamespace();
-
-        log.info("Configuring Istio for environment: {} in namespace: {} services: {}",
-                envName, namespace, input.servicesInEnv().size());
-
-        for (ServiceEnvStatus.ServiceInfo svc : input.servicesInEnv()) {
-            String serviceName = svc.getName();
-            if (serviceName == null || serviceName.isEmpty()) {
-                continue;
-            }
-            Set<String> versions = input.serviceVersions().getOrDefault(serviceName, Set.of());
-            createOrUpdateDestinationRule(serviceEnv, namespace, serviceName, envName, versions);
-            createOrUpdateVirtualService(serviceEnv, namespace, serviceName, envName, envName);
-        }
-
-        log.info("Istio configuration completed for environment: {}", envName);
-    }
-
-    /** 为「fallback 有、本环境无」的服务创建 fallback VS，路由到 fallback subset */
-    public void configureFallbackForSelf(ServiceEnv me, ReconcilerInput myInput, ReconcilerInput fallbackInput,
-                                         String fallbackEnv) {
-        if (fallbackEnv == null || fallbackEnv.isEmpty()) {
+        if (envs.isEmpty()) {
+            deleteServiceResources(namespace, serviceName);
             return;
         }
-        String myEnvName = me.getSpec().getEnvName();
-        String namespace = me.getMetadata().getNamespace();
+        createOrUpdateDestinationRule(namespace, serviceName, envs);
+        createOrUpdateVirtualService(namespace, serviceName, envs, fallbackEnv);
+    }
 
-        Set<String> myServices = myInput.servicesInEnv().stream()
-                .map(ServiceEnvStatus.ServiceInfo::getName)
-                .filter(Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-
-        int count = 0;
-        for (ServiceEnvStatus.ServiceInfo svc : fallbackInput.servicesInEnv()) {
-            String serviceName = svc.getName();
-            if (serviceName == null || serviceName.isEmpty() || myServices.contains(serviceName)) {
-                continue;
-            }
-            createOrUpdateVirtualService(me, namespace, serviceName, myEnvName, fallbackEnv);
-            count++;
-        }
-        if (count > 0) {
-            log.info("Configured fallback VirtualServices for {} services in env: {} -> {}",
-                    count, myEnvName, fallbackEnv);
+    private void deleteServiceResources(String namespace, String serviceName) {
+        try {
+            kubernetesClient.resources(io.fabric8.istio.api.networking.v1.VirtualService.class)
+                    .inNamespace(namespace).withName(serviceName + "-vs").delete();
+            kubernetesClient.resources(io.fabric8.istio.api.networking.v1.DestinationRule.class)
+                    .inNamespace(namespace).withName(serviceName + "-dr").delete();
+            log.debug("Deleted VS/DR for {}/{}", namespace, serviceName);
+        } catch (Exception e) {
+            log.debug("Delete VS/DR {}/{}: {}", namespace, serviceName, e.getMessage());
         }
     }
 
-    // --- DR / VS 创建 ---
+    /**
+     * 增量：添加或更新单个 service 到 ServiceEnv status。
+     * 约定：ServiceEnv metadata.name == spec.envName。
+     */
+    public void addOrUpdateServiceInEnvStatus(String namespace, String envName, ServiceEnvStatus.ServiceInfo serviceInfo) {
+        if (serviceInfo == null || serviceInfo.getName() == null || serviceInfo.getName().isEmpty()) {
+            return;
+        }
+        try {
+            ServiceEnv se = kubernetesClient.resources(ServiceEnv.class).inNamespace(namespace).withName(envName).get();
+            if (se == null || se.getSpec() == null || !envName.equals(se.getSpec().getEnvName())) {
+                return;
+            }
+            ServiceEnvStatus status = se.getStatus() != null ? se.getStatus() : new ServiceEnvStatus();
+            List<ServiceEnvStatus.ServiceInfo> list = status.getServices() != null
+                    ? new ArrayList<>(status.getServices()) : new ArrayList<>();
+            String version = serviceInfo.getVersion() != null ? serviceInfo.getVersion() : "default";
+            list.removeIf(s -> serviceInfo.getName().equals(s.getName()) && version.equals(s.getVersion() != null ? s.getVersion() : "default"));
+            ServiceEnvStatus.ServiceInfo entry = new ServiceEnvStatus.ServiceInfo();
+            entry.setName(serviceInfo.getName());
+            entry.setNamespace(namespace);
+            entry.setVersion(version);
+            list.add(entry);
+            applyStatus(se, status, list);
+        } catch (Exception e) {
+            log.debug("AddOrUpdate ServiceEnv status failed: {}", e.getMessage());
+        }
+    }
 
-    private void createOrUpdateDestinationRule(ServiceEnv owner, String namespace, String serviceName,
-                                                String envName, Set<String> versions) {
-        String drName = String.format("%s-%s-dr", serviceName, envName);
+    /**
+     * 增量：从 ServiceEnv status 移除单个 service。
+     */
+    public void removeServiceFromEnvStatus(String namespace, String envName, String serviceName, String version) {
+        if (serviceName == null || serviceName.isEmpty()) {
+            return;
+        }
+        try {
+            ServiceEnv se = kubernetesClient.resources(ServiceEnv.class).inNamespace(namespace).withName(envName).get();
+            if (se == null || se.getSpec() == null || !envName.equals(se.getSpec().getEnvName())) {
+                return;
+            }
+            ServiceEnvStatus status = se.getStatus() != null ? se.getStatus() : new ServiceEnvStatus();
+            List<ServiceEnvStatus.ServiceInfo> list = status.getServices() != null
+                    ? new ArrayList<>(status.getServices()) : new ArrayList<>();
+            String v = version != null ? version : "default";
+            list.removeIf(s -> serviceName.equals(s.getName()) && v.equals(s.getVersion() != null ? s.getVersion() : "default"));
+            applyStatus(se, status, list);
+        } catch (Exception e) {
+            log.debug("Remove ServiceEnv status failed: {}", e.getMessage());
+        }
+    }
 
-        List<Subset> subsets = createSubsets(envName, versions);
-        DestinationRule destinationRule = new DestinationRuleBuilder()
-                .withMetadata(createMetadata(drName, namespace, envName, serviceName, owner))
+    /**
+     * 全量：更新指定 env 的 ServiceEnv status（用于 ServiceEnvReconciler 或 resync 兜底）。
+     * 约定：ServiceEnv metadata.name == spec.envName。
+     */
+    public void updateServiceEnvStatusForEnv(String namespace, String envName,
+            List<ServiceEnvStatus.ServiceInfo> services) {
+        try {
+            ServiceEnv se = kubernetesClient.resources(ServiceEnv.class).inNamespace(namespace).withName(envName).get();
+            if (se == null || se.getSpec() == null || !envName.equals(se.getSpec().getEnvName())) {
+                return;
+            }
+            ServiceEnvStatus status = se.getStatus() != null ? se.getStatus() : new ServiceEnvStatus();
+            applyStatus(se, status, services != null ? services : List.of());
+        } catch (Exception e) {
+            log.debug("Update ServiceEnv status failed: {}", e.getMessage());
+        }
+    }
+
+    private void applyStatus(ServiceEnv se, ServiceEnvStatus status, List<ServiceEnvStatus.ServiceInfo> services) {
+        status.setServices(services);
+        status.setLastUpdateTime(java.time.LocalDateTime.now()
+                .format(java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+        status.setPhase("Active");
+        status.setMessage("Environment is active with " + services.size() + " services");
+        status.setIstioConfigured(true);
+        se.setStatus(status);
+        kubernetesClient.resource(se).updateStatus();
+    }
+
+    public String getFallbackEnvFromNamespace(String namespace) {
+        try {
+            Namespace ns = kubernetesClient.namespaces().withName(namespace).get();
+            if (ns != null && ns.getMetadata() != null && ns.getMetadata().getAnnotations() != null) {
+                return ns.getMetadata().getAnnotations().get(OperatorConstants.NAMESPACE_FALLBACK_ENV_ANNOTATION);
+            }
+        } catch (Exception e) {
+            log.debug("Get namespace {} annotation failed: {}", namespace, e.getMessage());
+        }
+        return null;
+    }
+
+    private void createOrUpdateDestinationRule(String namespace, String serviceName, Set<String> envs) {
+        List<Subset> subsets = envs.stream()
+                .map(env -> new SubsetBuilder()
+                        .withName(env)
+                        .withLabels(Map.of(OperatorConstants.ENV_LABEL_KEY, env))
+                        .build())
+                .toList();
+
+        var dr = new DestinationRuleBuilder()
+                .withNewMetadata()
+                    .withName(serviceName + "-dr")
+                    .withNamespace(namespace)
+                    .addToLabels(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName)
+                    .addToLabels("app.kubernetes.io/managed-by", MANAGED_BY)
+                .endMetadata()
                 .withNewSpec()
                     .withHost(serviceName)
                     .withSubsets(subsets)
                 .endSpec()
                 .build();
 
-        try {
-            DestinationRule existing = kubernetesClient.resources(DestinationRule.class)
-                    .inNamespace(namespace)
-                    .withName(drName)
-                    .get();
-
-            if (existing != null) {
-                kubernetesClient.resources(DestinationRule.class)
-                        .inNamespace(namespace)
-                        .resource(destinationRule)
-                        .update();
-                log.debug("Updated DestinationRule: {}/{}", namespace, drName);
-            } else {
-                kubernetesClient.resources(DestinationRule.class)
-                        .inNamespace(namespace)
-                        .resource(destinationRule)
-                        .create();
-                log.debug("Created DestinationRule: {}/{}", namespace, drName);
-            }
-        } catch (Exception e) {
-            log.error("Error creating/updating DestinationRule: {}/{}", namespace, drName, e);
-            throw new RuntimeException("Failed to configure DestinationRule", e);
-        }
+        apply(kubernetesClient.resources(DestinationRule.class).inNamespace(namespace).resource(dr),
+                "DestinationRule", namespace, serviceName + "-dr");
     }
 
-    /** envName=匹配的 header，targetSubset=路由目标 subset */
-    private void createOrUpdateVirtualService(ServiceEnv owner, String namespace, String serviceName,
-                                               String envName, String targetSubset) {
-        String vsName = String.format("%s-%s-vs", serviceName, envName);
+    private void createOrUpdateVirtualService(String namespace, String serviceName,
+            Set<String> envs, String fallbackEnv) {
+        List<HTTPRoute> routes = envs.stream()
+                .map(env -> buildEnvRoute(serviceName, env))
+                .collect(Collectors.toCollection(ArrayList::new));
 
-        HTTPMatchRequest match = createHeaderMatch(envName);
-        HTTPRoute route = new HTTPRouteBuilder()
-                .withMatch(Collections.singletonList(match))
-                .withRoute(Collections.singletonList(
-                    new HTTPRouteDestinationBuilder()
-                        .withDestination(new DestinationBuilder()
-                            .withHost(serviceName)
-                            .withSubset(targetSubset)
-                            .build())
-                        .withWeight(100)
-                        .build()
-                ))
-                .build();
+        if (fallbackEnv != null && !fallbackEnv.isEmpty()) {
+            routes.add(buildCatchAllRoute(serviceName, fallbackEnv));
+        }
 
-        VirtualService virtualService = new VirtualServiceBuilder()
-                .withMetadata(createMetadata(vsName, namespace, envName, serviceName, owner))
+        var vs = new VirtualServiceBuilder()
+                .withNewMetadata()
+                    .withName(serviceName + "-vs")
+                    .withNamespace(namespace)
+                    .addToLabels(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName)
+                    .addToLabels("app.kubernetes.io/managed-by", MANAGED_BY)
+                .endMetadata()
                 .withNewSpec()
-                    .withHosts(Collections.singletonList(serviceName))
-                    .withHttp(Collections.singletonList(route))
+                    .withHosts(List.of(serviceName))
+                    .withHttp(routes)
                 .endSpec()
                 .build();
 
+        apply(kubernetesClient.resources(VirtualService.class).inNamespace(namespace).resource(vs),
+                "VirtualService", namespace, serviceName + "-vs");
+    }
+
+    private <T> void apply(io.fabric8.kubernetes.client.dsl.Resource<T> resource, String kind, String namespace, String name) {
         try {
-            VirtualService existing = kubernetesClient.resources(VirtualService.class)
-                    .inNamespace(namespace)
-                    .withName(vsName)
-                    .get();
-
-            if (existing != null) {
-                kubernetesClient.resources(VirtualService.class)
-                        .inNamespace(namespace)
-                        .resource(virtualService)
-                        .update();
-                log.debug("Updated VirtualService: {}/{}", namespace, vsName);
-            } else {
-                kubernetesClient.resources(VirtualService.class)
-                        .inNamespace(namespace)
-                        .resource(virtualService)
-                        .create();
-                log.debug("Created VirtualService: {}/{}", namespace, vsName);
-            }
+            resource.createOr(r -> resource.update());
+            log.debug("Created/updated {} {}/{}", kind, namespace, name);
         } catch (Exception e) {
-            log.error("Error creating/updating VirtualService: {}/{}", namespace, vsName, e);
-            throw new RuntimeException("Failed to configure VirtualService", e);
+            log.error("Failed {} {}/{}", kind, namespace, name, e);
+            throw new RuntimeException("Failed to configure " + kind, e);
         }
     }
 
-    private ObjectMeta createMetadata(String name, String namespace, String envName,
-                                      String serviceName, ServiceEnv owner) {
-        if (owner.getMetadata() == null) {
-            throw new IllegalArgumentException("ServiceEnv owner must have metadata");
-        }
-        Map<String, String> labels = new HashMap<>();
-        labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/env", envName);
-        labels.put(OperatorConstants.ISTIO_RESOURCE_LABEL_PREFIX + "/service", serviceName);
-        labels.put("app.kubernetes.io/managed-by", "serviceenv-operator");
-
-        return new ObjectMetaBuilder()
-                .withName(name)
-                .withNamespace(namespace)
-                .withLabels(labels)
-                .withOwnerReferences(new io.fabric8.kubernetes.api.model.OwnerReferenceBuilder()
-                    .withApiVersion("serviceenv.zaeyi.com/v1")
-                    .withKind("ServiceEnv")
-                    .withName(owner.getMetadata().getName())
-                    .withUid(owner.getMetadata().getUid())
-                    .withController(true)
-                    .withBlockOwnerDeletion(true)
-                    .build())
+    private HTTPRoute buildEnvRoute(String serviceName, String env) {
+        HTTPMatchRequest match = new HTTPMatchRequestBuilder()
+                .withHeaders(Map.of(OperatorConstants.ENV_HEADER_NAME, new StringMatch(new StringMatchExact(env))))
+                .build();
+        return new HTTPRouteBuilder()
+                .withMatch(List.of(match))
+                .withRoute(List.of(new HTTPRouteDestinationBuilder()
+                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(env).build())
+                        .withWeight(100)
+                        .build()))
                 .build();
     }
 
-    /** 匹配 header x-service-env: envName */
-    private HTTPMatchRequest createHeaderMatch(String envName) {
-        StringMatch stringMatch = new StringMatch(new StringMatchExact(envName));
-        Map<String, StringMatch> headers = new HashMap<>();
-        headers.put(OperatorConstants.ENV_HEADER_NAME, stringMatch);
-        return new HTTPMatchRequestBuilder()
-                .withHeaders(headers)
+    private HTTPRoute buildCatchAllRoute(String serviceName, String fallbackEnv) {
+        return new HTTPRouteBuilder()
+                .withRoute(List.of(new HTTPRouteDestinationBuilder()
+                        .withDestination(new DestinationBuilder().withHost(serviceName).withSubset(fallbackEnv).build())
+                        .withWeight(100)
+                        .build()))
                 .build();
     }
 
-    private List<Subset> createSubsets(String envName, Set<String> versions) {
-        List<Subset> subsets = new ArrayList<>();
-        
-        for (String version : versions) {
-            Map<String, String> labels = new HashMap<>();
-            labels.put(OperatorConstants.ENV_LABEL_KEY, envName);
-            labels.put(OperatorConstants.VERSION_LABEL_KEY, version);
-
-            Subset subset = new SubsetBuilder()
-                    .withName(envName)
-                    .withLabels(labels)
-                    .build();
-            
-            subsets.add(subset);
-        }
-
-        if (subsets.isEmpty()) {
-            Map<String, String> labels = new HashMap<>();
-            labels.put(OperatorConstants.ENV_LABEL_KEY, envName);
-
-            Subset subset = new SubsetBuilder()
-                    .withName(envName)
-                    .withLabels(labels)
-                    .build();
-            
-            subsets.add(subset);
-        }
-
-        return subsets;
-    }
 }

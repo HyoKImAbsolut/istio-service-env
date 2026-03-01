@@ -1,0 +1,21 @@
+# 集群内 curl 客户端，用于发起请求走 Istio 路由
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: curl-client
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: curl-client
+  template:
+    metadata:
+      labels:
+        app: curl-client
+    spec:
+      containers:
+        - name: curl
+          image: busybox
+          command: ["sleep", "infinity"]

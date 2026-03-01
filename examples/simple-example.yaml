@@ -1,7 +1,7 @@
-# 简单示例：prod、base、dev 三环境，仅 dev fallback 到 base
+# 简单示例：prod、base、dev 三环境，fallback 由 namespace 注解配置
 #
 ---
-# 生产环境（无 fallback）
+# 生产环境
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
 metadata:
@@ -13,7 +13,7 @@ spec:
   enabled: true
 
 ---
-# 基准环境（无 fallback）
+# 基准环境
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
 metadata:
@@ -25,7 +25,7 @@ spec:
   enabled: true
 
 ---
-# 开发环境，fallback 到 base
+# 开发环境
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
 metadata:
@@ -33,7 +33,6 @@ metadata:
   namespace: default
 spec:
   envName: dev
-  fallbackEnv: base
   description: "开发环境"
   enabled: true
 

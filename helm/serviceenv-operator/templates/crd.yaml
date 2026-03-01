@@ -24,9 +24,6 @@ spec:
             properties:
               envName:
                 type: string
-              fallbackEnv:
-                type: string
-                description: "Fallback environment when service not in current env"
               description:
                 type: string
               enabled:

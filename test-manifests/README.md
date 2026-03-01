@@ -1,11 +1,12 @@
 # ServiceEnv Operator 测试清单
 
-用于验证路由分组隔离和 fallback 功能。所有资源位于 `serviceenv-test` 命名空间，便于一键清理。
+用于验证路由分组隔离和 namespace 级 fallback 功能。所有资源位于 `serviceenv-test` 命名空间，便于一键清理。
 
 ## 测试结构
 
 | 资源 | 说明 |
 |------|------|
+| **00-namespace** | 含 `serviceenv.zaeyi.com/fallback-env: base` 注解 |
 | **httpbin** | prod/base/dev 均有部署，验证环境隔离 |
 | **fallback-target** | 仅 prod/base，无 dev，验证 dev fallback 到 base |
 

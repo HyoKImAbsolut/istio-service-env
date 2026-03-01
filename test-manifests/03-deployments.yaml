@@ -7,6 +7,8 @@ kind: Deployment
 metadata:
   name: httpbin-prod
   namespace: serviceenv-test
+  labels:
+    serviceenv.zaeyi.com/env: prod
 spec:
   replicas: 1
   selector:
@@ -23,19 +25,19 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: kennethreitz/httpbin
+          image: hashicorp/http-echo
           imagePullPolicy: IfNotPresent
+          args: ["-listen=:8080", "-text=httpbin-prod"]
           ports:
-            - containerPort: 80
-          env:
-            - name: ENV
-              value: "prod"
+            - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: httpbin-base
   namespace: serviceenv-test
+  labels:
+    serviceenv.zaeyi.com/env: base
 spec:
   replicas: 1
   selector:
@@ -52,19 +54,19 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: kennethreitz/httpbin
+          image: hashicorp/http-echo
           imagePullPolicy: IfNotPresent
+          args: ["-listen=:8080", "-text=httpbin-base"]
           ports:
-            - containerPort: 80
-          env:
-            - name: ENV
-              value: "base"
+            - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: httpbin-dev
   namespace: serviceenv-test
+  labels:
+    serviceenv.zaeyi.com/env: dev
 spec:
   replicas: 1
   selector:
@@ -81,19 +83,19 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: kennethreitz/httpbin
+          image: hashicorp/http-echo
           imagePullPolicy: IfNotPresent
+          args: ["-listen=:8080", "-text=httpbin-dev"]
           ports:
-            - containerPort: 80
-          env:
-            - name: ENV
-              value: "dev"
+            - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fallback-target-prod
   namespace: serviceenv-test
+  labels:
+    serviceenv.zaeyi.com/env: prod
 spec:
   replicas: 1
   selector:
@@ -110,19 +112,19 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: kennethreitz/httpbin
+          image: hashicorp/http-echo
           imagePullPolicy: IfNotPresent
+          args: ["-listen=:8080", "-text=fallback-target-prod"]
           ports:
-            - containerPort: 80
-          env:
-            - name: ENV
-              value: "prod"
+            - containerPort: 8080
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: fallback-target-base
   namespace: serviceenv-test
+  labels:
+    serviceenv.zaeyi.com/env: base
 spec:
   replicas: 1
   selector:
@@ -139,10 +141,8 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: kennethreitz/httpbin
+          image: hashicorp/http-echo
           imagePullPolicy: IfNotPresent
+          args: ["-listen=:8080", "-text=fallback-target-base"]
           ports:
-            - containerPort: 80
-          env:
-            - name: ENV
-              value: "base"
+            - containerPort: 8080

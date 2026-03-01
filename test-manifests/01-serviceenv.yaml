@@ -1,4 +1,5 @@
-# ServiceEnv 定义：prod、base、dev 三环境，dev fallback 到 base
+# ServiceEnv 定义：prod、base、dev 三环境
+# Fallback 从 namespace 注解 serviceenv.zaeyi.com/fallback-env 读取（见 00-namespace.yaml）
 ---
 apiVersion: serviceenv.zaeyi.com/v1
 kind: ServiceEnv
@@ -17,7 +18,7 @@ metadata:
   namespace: serviceenv-test
 spec:
   envName: base
-  description: "基准环境"
+  description: "基准环境（namespace 兜底 fallback 目标）"
   enabled: true
 ---
 apiVersion: serviceenv.zaeyi.com/v1
@@ -27,6 +28,5 @@ metadata:
   namespace: serviceenv-test
 spec:
   envName: dev
-  fallbackEnv: base
-  description: "开发环境 fallback 到 base"
+  description: "开发环境"
   enabled: true

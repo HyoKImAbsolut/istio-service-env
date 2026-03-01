@@ -1,4 +1,4 @@
-# 多服务示例：prod、base、dev，仅 dev fallback 到 base
+# 多服务示例：prod、base、dev，fallback 由 namespace 注解配置
 
 ---
 # 环境定义
@@ -28,7 +28,6 @@ metadata:
   name: dev
 spec:
   envName: dev
-  fallbackEnv: base
   description: "开发环境"
   enabled: true
 

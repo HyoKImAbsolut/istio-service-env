@@ -1,7 +1,10 @@
 # 测试专用命名空间，便于一键清理
+# serviceenv.zaeyi.com/fallback-env: 兜底 fallback 的 env，无匹配路由时路由到该 subset
 apiVersion: v1
 kind: Namespace
 metadata:
   name: serviceenv-test
   labels:
     istio-injection: enabled
+  annotations:
+    serviceenv.zaeyi.com/fallback-env: base

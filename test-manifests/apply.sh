@@ -7,6 +7,7 @@ kubectl apply -f "$SCRIPT_DIR/00-namespace.yaml"
 kubectl apply -f "$SCRIPT_DIR/01-serviceenv.yaml"
 kubectl apply -f "$SCRIPT_DIR/02-services.yaml"
 kubectl apply -f "$SCRIPT_DIR/03-deployments.yaml"
+kubectl apply -f "$SCRIPT_DIR/04-curl-client.yaml"
 echo "Waiting for pods to be ready..."
 kubectl wait --for=condition=Ready pod -l app=httpbin -n serviceenv-test --timeout=120s 2>/dev/null || true
 kubectl wait --for=condition=Ready pod -l app=fallback-target -n serviceenv-test --timeout=120s 2>/dev/null || true
