@@ -17,6 +17,7 @@ import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
+import io.javaoperatorsdk.operator.processing.event.source.filter.OnUpdateFilter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -81,14 +82,20 @@ public class AppReconciler implements Reconciler<App> {
         var seConfig = InformerEventSourceConfiguration.from(ServiceEnv.class, App.class)
                 .withSecondaryToPrimaryMapper(this::serviceEnvToApps)
                 .withNamespacesInheritedFromController()
+                .withOnUpdateFilter((ServiceEnv oldObj, ServiceEnv newObj) -> {
+                    if (oldObj == null || newObj == null) return true;
+                    var oldGen = oldObj.getMetadata() != null ? oldObj.getMetadata().getGeneration() : null;
+                    var newGen = newObj.getMetadata() != null ? newObj.getMetadata().getGeneration() : null;
+                    return oldGen == null || newGen == null || !oldGen.equals(newGen);
+                })
                 .build();
         serviceEnvEventSource = new InformerEventSource<>(seConfig, context);
 
         var eventSources = new ArrayList<EventSource<?, App>>();
         eventSources.add(deploymentEventSource);
         eventSources.add(serviceEnvEventSource);
-        destinationRuleDependent.eventSource(context).ifPresent(eventSources::add);
-        virtualServiceDependent.eventSource(context).ifPresent(eventSources::add);
+        // 不注册 DependentResource event source，避免创建/更新 VS/DR 时触发冗余 reconcile 导致 409 冲突
+        // VS/DR 被外部删除时，下次 Deployment/ServiceEnv/App 变更会触发 reconcile 并重建
 
         return eventSources;
     }
