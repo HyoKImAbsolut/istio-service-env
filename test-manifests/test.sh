@@ -56,15 +56,12 @@ assert_routed_to_pod "$(run_curl ${HTTPBIN_URL}/ base)" "httpbin-base" "x-servic
 assert_routed_to_pod "$(run_curl ${HTTPBIN_URL}/ dev)" "httpbin-dev" "x-service-env: dev"
 
 echo ""
-echo "=== 2. 无 x-service-env header（默认路由）==="
+echo "=== 2. Fallback：无 x-service-env header 或未知 env 应路由到 namespace 注解的 fallback（base）==="
 DEFAULT=$(run_curl ${HTTPBIN_URL}/)
-DEFAULT_HOSTNAME=$(get_hostname_from_response "$DEFAULT")
-if [ -n "$DEFAULT_HOSTNAME" ]; then
-  echo "  → 默认路由响应来自 Pod: $DEFAULT_HOSTNAME"
-else
-  echo "  → 默认路由无响应"
-  FAILED=1
-fi
+assert_routed_to_pod "$DEFAULT" "httpbin-base" "无 header → fallback base"
+
+UNKNOWN=$(run_curl ${HTTPBIN_URL}/ unknown-env)
+assert_routed_to_pod "$UNKNOWN" "httpbin-base" "未知 env → fallback base"
 
 echo ""
 if [ $FAILED -eq 0 ]; then
