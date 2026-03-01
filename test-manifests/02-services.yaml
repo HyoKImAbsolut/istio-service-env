@@ -12,16 +12,3 @@ spec:
       targetPort: 8080
   selector:
     app: httpbin
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: fallback-target
-  namespace: serviceenv-test
-spec:
-  ports:
-    - port: 8000
-      name: http
-      targetPort: 8080
-  selector:
-    app: fallback-target

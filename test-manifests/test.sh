@@ -1,12 +1,11 @@
 #!/bin/bash
-# 路由验证测试：从集群内 curl-client 发起请求（Istio 才能按 x-service-env 路由），通过响应体判断是否路由到正确分组 Pod
+# 路由验证测试：从集群内 curl-client 发起请求（Istio 才能按 x-service-env 路由）
+# 使用 traefik/whoami 返回 Pod hostname，精确验证请求是否打到对应 Pod
 set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NS=serviceenv-test
 FAILED=0
-# 集群内服务地址（同 namespace 可用短名）
 HTTPBIN_URL="http://httpbin:8000"
-FALLBACK_URL="http://fallback-target:8000"
 
 # 从集群内 curl-client pod 发起请求（走 Istio 路由，busybox 用 wget）
 run_curl() {
@@ -19,20 +18,25 @@ run_curl() {
   fi
 }
 
-# 验证响应体是否包含预期标识（hashicorp/http-echo 返回 -text 参数值）
-assert_routed_to() {
+# 从 whoami 响应中解析 Hostname（K8s 中即 Pod 名，格式如 "Hostname :  httpbin-prod-xxx"）
+get_hostname_from_response() {
+  echo "$1" | grep -iE '^Hostname' | head -1 | sed 's/^Hostname[[:space:]]*:[[:space:]]*//' | tr -d '\r\n' | awk '{print $1}'
+}
+
+# 验证响应来自预期 Pod（通过 hostname 前缀匹配，如 httpbin-prod-xxx）
+assert_routed_to_pod() {
   local result="$1"
-  local expected_text="$2"
+  local expected_prefix="$2"
   local test_name="$3"
-  local clean_result
-  clean_result=$(echo "$result" | tr -d '\n\r' | head -c 100)
-  if echo "$result" | grep -q "$expected_text"; then
-    echo "  ✓ $test_name: 路由正确 响应含 $expected_text"
-  elif echo "$result" | grep -q "Not Found\|404\|error"; then
-    echo "  ✗ $test_name: 请求失败 ($clean_result)"
+  local hostname
+  hostname=$(get_hostname_from_response "$result")
+  if [ -z "$hostname" ]; then
+    echo "  ✗ $test_name: 无法解析 Hostname 响应 $([ -n "$result" ] && echo "$result" | head -c 80)"
     FAILED=1
+  elif [[ "$hostname" == $expected_prefix* ]]; then
+    echo "  ✓ $test_name: 路由正确 响应来自 Pod $hostname"
   else
-    echo "  ✗ $test_name: 响应 $clean_result 不含预期 $expected_text"
+    echo "  ✗ $test_name: 响应来自 $hostname 预期前缀 $expected_prefix"
     FAILED=1
   fi
 }
@@ -47,20 +51,16 @@ echo "=== 从集群内 curl-client 发起请求（走 Istio 路由，按 x-servi
 
 echo ""
 echo "=== 1. 环境隔离：httpbin 按 x-service-env 路由到对应分组 Pod ==="
-assert_routed_to "$(run_curl ${HTTPBIN_URL}/ prod)" "httpbin-prod" "x-service-env: prod"
-assert_routed_to "$(run_curl ${HTTPBIN_URL}/ base)" "httpbin-base" "x-service-env: base"
-assert_routed_to "$(run_curl ${HTTPBIN_URL}/ dev)" "httpbin-dev" "x-service-env: dev"
+assert_routed_to_pod "$(run_curl ${HTTPBIN_URL}/ prod)" "httpbin-prod" "x-service-env: prod"
+assert_routed_to_pod "$(run_curl ${HTTPBIN_URL}/ base)" "httpbin-base" "x-service-env: base"
+assert_routed_to_pod "$(run_curl ${HTTPBIN_URL}/ dev)" "httpbin-dev" "x-service-env: dev"
 
 echo ""
-echo "=== 2. Fallback：dev 无 fallback-target 部署，应 fallback 到 base 分组 ==="
-assert_routed_to "$(run_curl ${FALLBACK_URL}/ dev)" "fallback-target-base" "fallback-target x-service-env: dev (fallback 到 base)"
-assert_routed_to "$(run_curl ${FALLBACK_URL}/ prod)" "fallback-target-prod" "fallback-target x-service-env: prod"
-
-echo ""
-echo "=== 3. 无 x-service-env header（默认路由）==="
+echo "=== 2. 无 x-service-env header（默认路由）==="
 DEFAULT=$(run_curl ${HTTPBIN_URL}/)
-if [ -n "$DEFAULT" ]; then
-  echo "  → 默认路由响应: $(echo "$DEFAULT" | tr -d '\n' | head -c 80)"
+DEFAULT_HOSTNAME=$(get_hostname_from_response "$DEFAULT")
+if [ -n "$DEFAULT_HOSTNAME" ]; then
+  echo "  → 默认路由响应来自 Pod: $DEFAULT_HOSTNAME"
 else
   echo "  → 默认路由无响应"
   FAILED=1

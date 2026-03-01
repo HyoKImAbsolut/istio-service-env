@@ -8,7 +8,7 @@
 - **App CRD**：`serviceenv.zaeyi.com/app`，VS 和 DR 归属于 App，app 名称从 `app.kubernetes.io/name` 读取
 - **Namespace 级 Fallback**：通过 namespace 注解配置兜底 env，无匹配路由或 subset 无端点时 fallback
 - **全链路保持**：请求 header `x-service-env` 贯穿调用链
-- **自动化**：Operator 自动创建 VirtualService、DestinationRule、EnvoyFilter
+- **自动化**：Operator 自动创建 VirtualService、DestinationRule
 
 ## 架构设计
 
@@ -23,13 +23,13 @@
 
 | Reconciler | Primary | 职责 |
 |------------|---------|------|
-| **AppReconciler** | App | VS/DR 唯一写入者，按 app 增量 reconcile |
+| **AppReconciler** | App | VS / DR 唯一写入者，按 app 增量 reconcile |
 | **ServiceEnvReconciler** | ServiceEnv | 仅更新 ServiceEnv status，不写 VS/DR |
 
 App 需用户显式创建，Deployment 不创建 App，生命周期分离。
 
 - **App CRD**：`serviceenv.zaeyi.com/app`，`spec.appName` 必须与 Deployment 的 `app.kubernetes.io/name` 一致；`metadata.name` 为 App 自有名称
-- **VS/DR 归属**：通过 ownerReference 归属于 App，App 删除时自动级联删除
+- **Service / VS / DR 归属**：通过 ownerReference 归属于 App，App 删除时自动级联删除；Service 从 Deployment 推断 port，若已存在且非本 Operator 创建则不覆盖
 
 ## 安装
 
@@ -91,7 +91,7 @@ spec:
 
 ### 3. 创建 App
 
-App CR 需先于 Deployment 创建，`spec.appName` 必须与 Deployment 的 `app.kubernetes.io/name` 一致：
+App CR 需先于 Deployment 创建，`spec.appName` 必须与 Deployment 的 `app.kubernetes.io/name` 一致。Service 由应用自行创建。
 
 ```yaml
 apiVersion: serviceenv.zaeyi.com/v1

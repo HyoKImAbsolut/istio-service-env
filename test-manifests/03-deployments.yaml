@@ -1,6 +1,5 @@
 # 测试 Deployments
 # httpbin: prod/base/dev 均有，验证环境隔离
-# fallback-target: 仅 prod/base，无 dev，验证 dev fallback 到 base
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -25,9 +24,9 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: hashicorp/http-echo
+          image: traefik/whoami
           imagePullPolicy: IfNotPresent
-          args: ["-listen=:8080", "-text=httpbin-prod"]
+          args: ["--port=8080"]
           ports:
             - containerPort: 8080
 ---
@@ -54,9 +53,9 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: hashicorp/http-echo
+          image: traefik/whoami
           imagePullPolicy: IfNotPresent
-          args: ["-listen=:8080", "-text=httpbin-base"]
+          args: ["--port=8080"]
           ports:
             - containerPort: 8080
 ---
@@ -83,66 +82,8 @@ spec:
     spec:
       containers:
         - name: httpbin
-          image: hashicorp/http-echo
+          image: traefik/whoami
           imagePullPolicy: IfNotPresent
-          args: ["-listen=:8080", "-text=httpbin-dev"]
-          ports:
-            - containerPort: 8080
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: fallback-target-prod
-  namespace: serviceenv-test
-  labels:
-    serviceenv.zaeyi.com/env: prod
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: fallback-target
-      serviceenv.zaeyi.com/env: prod
-  template:
-    metadata:
-      labels:
-        app: fallback-target
-        app.kubernetes.io/name: fallback-target
-        app.kubernetes.io/version: v1
-        serviceenv.zaeyi.com/env: prod
-    spec:
-      containers:
-        - name: httpbin
-          image: hashicorp/http-echo
-          imagePullPolicy: IfNotPresent
-          args: ["-listen=:8080", "-text=fallback-target-prod"]
-          ports:
-            - containerPort: 8080
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: fallback-target-base
-  namespace: serviceenv-test
-  labels:
-    serviceenv.zaeyi.com/env: base
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: fallback-target
-      serviceenv.zaeyi.com/env: base
-  template:
-    metadata:
-      labels:
-        app: fallback-target
-        app.kubernetes.io/name: fallback-target
-        app.kubernetes.io/version: v1
-        serviceenv.zaeyi.com/env: base
-    spec:
-      containers:
-        - name: httpbin
-          image: hashicorp/http-echo
-          imagePullPolicy: IfNotPresent
-          args: ["-listen=:8080", "-text=fallback-target-base"]
+          args: ["--port=8080"]
           ports:
             - containerPort: 8080

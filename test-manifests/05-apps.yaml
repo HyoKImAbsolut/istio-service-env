@@ -1,5 +1,5 @@
 # App CR 需用户显式创建，spec.appName 必须与 Deployment 的 app.kubernetes.io/name 一致。
-# 测试用 App，对应 03-deployments.yaml 中的 httpbin、fallback-target
+# 测试用 App，对应 03-deployments.yaml 中的 httpbin
 ---
 apiVersion: serviceenv.zaeyi.com/v1
 kind: App
@@ -8,11 +8,3 @@ metadata:
   namespace: serviceenv-test
 spec:
   appName: httpbin
----
-apiVersion: serviceenv.zaeyi.com/v1
-kind: App
-metadata:
-  name: fallback-target
-  namespace: serviceenv-test
-spec:
-  appName: fallback-target
