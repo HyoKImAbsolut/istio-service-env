@@ -17,7 +17,7 @@ import java.util.regex.Pattern;
 
 /**
  * GraalVM Native Image 反射与资源配置。
- * 按包路径扫描 fabric8、istio、JOSDK 及本应用，批量注册反射 hint，避免手动维护类列表。
+ * 按需扫描 kubernetes-client、istio-model、JOSDK operator 及本应用，批量注册反射 hint。
  */
 @Configuration
 @ImportRuntimeHints(NativeConfiguration.NativeHints.class)
@@ -28,8 +28,9 @@ public class NativeConfiguration {
     private static final MemberCategory[] FULL_REFLECTION = MemberCategory.values();
 
     private static final String[] PACKAGE_PATTERNS = {
-            "classpath*:io/fabric8/**/*.class",
-            "classpath*:io/javaoperatorsdk/**/*.class",
+            "classpath*:io/fabric8/kubernetes/**/*.class",
+            "classpath*:io/fabric8/istio/**/*.class",
+            "classpath*:io/javaoperatorsdk/operator/**/*.class",
             "classpath*:com/zaeyi/serviceenv/**/*.class"
     };
 

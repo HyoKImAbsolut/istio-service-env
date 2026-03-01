@@ -1,0 +1,148 @@
+# 测试 Deployments
+# httpbin: prod/base/dev 均有，验证环境隔离
+# fallback-target: 仅 prod/base，无 dev，验证 dev fallback 到 base
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin-prod
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      serviceenv.zaeyi.com/env: prod
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        app.kubernetes.io/name: httpbin
+        app.kubernetes.io/version: v1
+        serviceenv.zaeyi.com/env: prod
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV
+              value: "prod"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin-base
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      serviceenv.zaeyi.com/env: base
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        app.kubernetes.io/name: httpbin
+        app.kubernetes.io/version: v1
+        serviceenv.zaeyi.com/env: base
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV
+              value: "base"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: httpbin-dev
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: httpbin
+      serviceenv.zaeyi.com/env: dev
+  template:
+    metadata:
+      labels:
+        app: httpbin
+        app.kubernetes.io/name: httpbin
+        app.kubernetes.io/version: v2
+        serviceenv.zaeyi.com/env: dev
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV
+              value: "dev"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fallback-target-prod
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fallback-target
+      serviceenv.zaeyi.com/env: prod
+  template:
+    metadata:
+      labels:
+        app: fallback-target
+        app.kubernetes.io/name: fallback-target
+        app.kubernetes.io/version: v1
+        serviceenv.zaeyi.com/env: prod
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV
+              value: "prod"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fallback-target-base
+  namespace: serviceenv-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: fallback-target
+      serviceenv.zaeyi.com/env: base
+  template:
+    metadata:
+      labels:
+        app: fallback-target
+        app.kubernetes.io/name: fallback-target
+        app.kubernetes.io/version: v1
+        serviceenv.zaeyi.com/env: base
+    spec:
+      containers:
+        - name: httpbin
+          image: kennethreitz/httpbin
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+          env:
+            - name: ENV
+              value: "base"
