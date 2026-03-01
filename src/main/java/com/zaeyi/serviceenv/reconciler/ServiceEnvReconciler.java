@@ -5,6 +5,7 @@ import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
 import com.zaeyi.serviceenv.service.IstioConfigService;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
+import io.javaoperatorsdk.operator.api.config.informer.Informer;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
 import io.javaoperatorsdk.operator.api.reconciler.*;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
@@ -23,9 +24,10 @@ import java.util.*;
  *
  * <p>触发：Deployment(env=E) 触发 ServiceEnv(envName=E) 及 ServiceEnv(fallbackEnv=E)。
  * <p>逻辑：为本环境创建 DR+VS；若 spec.fallbackEnv 存在，为「fallback 有、本环境无」的服务创建 fallback VS。每个 ServiceEnv 可独立配置 fallback。
+ * <p>命名空间：通过 informer.namespaces 固化为监听所有命名空间。
  */
 @Component
-@ControllerConfiguration
+@ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
 @Slf4j
 @RequiredArgsConstructor
 public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
