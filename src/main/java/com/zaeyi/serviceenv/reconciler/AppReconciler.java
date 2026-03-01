@@ -13,6 +13,7 @@ import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.config.informer.Informer;
 import io.javaoperatorsdk.operator.api.reconciler.*;
+import io.javaoperatorsdk.operator.api.reconciler.dependent.Dependent;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
@@ -27,9 +28,13 @@ import java.util.*;
 import java.util.stream.Collectors;
 
 /**
- * App Reconciler：使用 DependentResource 管理 VS/DR，ownerReference 由 SDK 自动添加。
+ * App Reconciler：使用 Workflow 模式管理 VS/DR，依赖由框架自动 reconcile，event filtering 避免自触发。
  */
 @Component
+@Workflow(dependents = {
+        @Dependent(type = DestinationRuleDependentResource.class),
+        @Dependent(type = VirtualServiceDependentResource.class)
+})
 @ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
 @Slf4j
 @RequiredArgsConstructor
@@ -40,8 +45,6 @@ public class AppReconciler implements Reconciler<App> {
 
     private final IstioConfigService istioConfigService;
     private final KubernetesClient kubernetesClient;
-    private final DestinationRuleDependentResource destinationRuleDependent;
-    private final VirtualServiceDependentResource virtualServiceDependent;
 
     private InformerEventSource<Deployment, App> deploymentEventSource;
     private InformerEventSource<ServiceEnv, App> serviceEnvEventSource;
@@ -89,9 +92,6 @@ public class AppReconciler implements Reconciler<App> {
                 })
                 .build();
         serviceEnvEventSource = new InformerEventSource<>(seConfig, context);
-
-        destinationRuleDependent.eventSource(context);
-        virtualServiceDependent.eventSource(context);
 
         var eventSources = new ArrayList<EventSource<?, App>>();
         eventSources.add(deploymentEventSource);
@@ -146,9 +146,6 @@ public class AppReconciler implements Reconciler<App> {
         }
 
         try {
-            destinationRuleDependent.reconcile(resource, context);
-            virtualServiceDependent.reconcile(resource, context);
-
             Set<String> envs = deploymentEventSource.byIndex(SERVICE_INDEX, serviceIndexKey(namespace, appName))
                     .stream()
                     .filter(d -> d.getMetadata() != null && d.getMetadata().getLabels() != null)
