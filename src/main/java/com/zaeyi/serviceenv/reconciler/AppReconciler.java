@@ -5,6 +5,7 @@ import com.zaeyi.serviceenv.crd.App;
 import com.zaeyi.serviceenv.crd.AppStatus;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.dependent.DestinationRuleDependentResource;
+import com.zaeyi.serviceenv.dependent.HasActiveEnvsCondition;
 import com.zaeyi.serviceenv.dependent.VirtualServiceDependentResource;
 import com.zaeyi.serviceenv.util.AppNameUtil;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
@@ -40,8 +41,8 @@ import java.util.stream.Collectors;
  */
 @Component
 @Workflow(dependents = {
-        @Dependent(type = DestinationRuleDependentResource.class),
-        @Dependent(type = VirtualServiceDependentResource.class)
+        @Dependent(type = DestinationRuleDependentResource.class, reconcilePrecondition = HasActiveEnvsCondition.class),
+        @Dependent(type = VirtualServiceDependentResource.class,  reconcilePrecondition = HasActiveEnvsCondition.class)
 })
 @ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
 @Slf4j
