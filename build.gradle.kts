@@ -39,8 +39,9 @@ dependencies {
     compileOnly("org.projectlombok:lombok")
     annotationProcessor("org.projectlombok:lombok")
     
-    // Apache Commons Lang
+    // Apache Commons
     implementation("org.apache.commons:commons-lang3:3.20.0")
+    implementation("org.apache.commons:commons-collections4:4.5.0")
 
     // Jackson for JSON processing
     implementation("com.fasterxml.jackson.core:jackson-databind")

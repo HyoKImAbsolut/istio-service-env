@@ -4,7 +4,7 @@ import com.zaeyi.serviceenv.crd.App;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.DependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.Condition;
-import org.apache.commons.lang3.CollectionUtils;
+import org.apache.commons.collections4.CollectionUtils;
 
 /**
  * DependentResource 的前置条件：App.status.envs 非空才允许创建/更新 VS/DR。
