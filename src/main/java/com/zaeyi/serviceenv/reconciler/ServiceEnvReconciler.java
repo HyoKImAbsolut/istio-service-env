@@ -3,28 +3,37 @@ package com.zaeyi.serviceenv.reconciler;
 import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.ServiceEnv;
 import com.zaeyi.serviceenv.crd.ServiceEnvStatus;
-import com.zaeyi.serviceenv.service.IstioConfigService;
 import com.zaeyi.serviceenv.util.AppNameUtil;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
 import io.javaoperatorsdk.operator.api.config.informer.Informer;
 import io.javaoperatorsdk.operator.api.config.informer.InformerEventSourceConfiguration;
 import io.javaoperatorsdk.operator.api.reconciler.*;
+import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
+import io.fabric8.kubernetes.client.KubernetesClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import java.net.HttpURLConnection;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * ServiceEnv Reconciler：仅更新 ServiceEnv status，不写 VS/DR。
- * VS/DR 由 AppReconciler 唯一写入。
+ * ServiceEnv 的协调器，唯一负责维护 ServiceEnv status。
  *
- * <p>触发：仅 ServiceEnv 自身变更或 operator 启动。
- * <p>逻辑：按 env 获取 deployments，全量更新 status。disabled 时更新 phase。
+ * <p><b>职责：</b>
+ * <ol>
+ *   <li>监听 ServiceEnv 自身变更（spec 变更、enabled 开关）
+ *   <li>监听 Deployment 变更，当带有 env 标签的 Deployment 增减时触发所属 ServiceEnv 重新协调
+ *   <li>全量重建 ServiceEnv.status.services 列表（该 env 下所有 Deployment 对应的服务信息）
+ *   <li>env 被禁用时将 status 置为 Disabled
+ * </ol>
+ *
+ * <p><b>不负责：</b>VirtualService 和 DestinationRule 的创建，那是 AppReconciler 的职责。
  */
 @Component
 @ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
@@ -32,109 +41,180 @@ import java.util.*;
 @RequiredArgsConstructor
 public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
 
+    /** 索引 key: "namespace#envName" → 按 env 查找该 env 下所有带 env 标签的 Deployment。 */
     private static final String NAMESPACE_ENV_INDEX = "namespace-env";
 
-    private final IstioConfigService istioConfigService;
+    private final KubernetesClient kubernetesClient;
 
     private InformerEventSource<Deployment, ServiceEnv> deploymentEventSource;
 
-    private static String indexKey(String namespace, String env) {
-        return namespace + "#" + env;
-    }
+    // -----------------------------------------------------------------------
+    // EventSource 注册
+    // -----------------------------------------------------------------------
 
     @Override
     public List<EventSource<?, ServiceEnv>> prepareEventSources(EventSourceContext<ServiceEnv> context) {
-        var depConfig = InformerEventSourceConfiguration.from(Deployment.class, ServiceEnv.class)
-                .withSecondaryToPrimaryMapper(deployment -> Set.of())
+        var config = InformerEventSourceConfiguration.from(Deployment.class, ServiceEnv.class)
+                .withSecondaryToPrimaryMapper(this::deploymentToServiceEnv)
                 .withNamespacesInheritedFromController()
                 .build();
-
-        deploymentEventSource = new InformerEventSource<>(depConfig, context);
-        deploymentEventSource.addIndexers(Map.of(
-                NAMESPACE_ENV_INDEX, d -> {
-                    if (d.getMetadata() == null || d.getMetadata().getLabels() == null
-                            || d.getMetadata().getNamespace() == null) return List.of();
-                    String env = d.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY);
-                    if (env == null || env.isEmpty()) return List.of();
-                    return List.of(indexKey(d.getMetadata().getNamespace(), env));
-                }));
-
+        deploymentEventSource = new InformerEventSource<>(config, context);
+        deploymentEventSource.addIndexers(Map.of(NAMESPACE_ENV_INDEX, this::indexDeploymentByEnv));
         return List.of(deploymentEventSource);
     }
 
+    /** 索引 key: "namespace#envName"，只索引带 env 标签的 Deployment。 */
+    private List<String> indexDeploymentByEnv(Deployment d) {
+        if (d.getMetadata() == null || d.getMetadata().getLabels() == null
+                || d.getMetadata().getNamespace() == null) return List.of();
+        String env = d.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY);
+        if (env == null || env.isEmpty()) return List.of();
+        return List.of(d.getMetadata().getNamespace() + "#" + env);
+    }
+
+    /**
+     * Deployment 变更时，找到对应的 ServiceEnv。
+     * 约定：ServiceEnv metadata.name == spec.envName，因此直接用 env 标签值构造 ResourceID。
+     */
+    private Set<ResourceID> deploymentToServiceEnv(Deployment d) {
+        if (d.getMetadata() == null || d.getMetadata().getLabels() == null) return Set.of();
+        String env = d.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY);
+        String namespace = d.getMetadata().getNamespace();
+        if (env == null || env.isEmpty() || namespace == null) return Set.of();
+        return Set.of(new ResourceID(env, namespace));
+    }
+
+    // -----------------------------------------------------------------------
+    // 主协调流程
+    // -----------------------------------------------------------------------
+
     @Override
-    public UpdateControl<ServiceEnv> reconcile(ServiceEnv resource, Context<ServiceEnv> context) {
-        if (resource.getMetadata() == null || resource.getSpec() == null) {
-            log.warn("ServiceEnv has null metadata or spec skipping reconcile");
+    public UpdateControl<ServiceEnv> reconcile(ServiceEnv serviceEnv, Context<ServiceEnv> context) {
+        String namespace = serviceEnv.getMetadata().getNamespace();
+        String envName   = serviceEnv.getSpec() != null ? serviceEnv.getSpec().getEnvName() : null;
+
+        if (envName == null || envName.isEmpty()) {
+            log.warn("ServiceEnv {}/{} spec.envName is empty skipping",
+                    namespace, serviceEnv.getMetadata().getName());
             return UpdateControl.noUpdate();
         }
-        String namespace = resource.getMetadata().getNamespace();
-        String envName = resource.getSpec().getEnvName();
-        log.info("Reconciling ServiceEnv: {}/{} (status only)", namespace, resource.getMetadata().getName());
 
         try {
-            if (envName == null || envName.isEmpty()) {
-                log.warn("ServiceEnv {}/{} has empty envName skipping reconcile", namespace, resource.getMetadata().getName());
-                return UpdateControl.noUpdate();
+            if (!Boolean.TRUE.equals(serviceEnv.getSpec().getEnabled())) {
+                return UpdateControl.patchStatus(applyDisabledStatus(serviceEnv));
             }
 
-            ServiceEnvStatus status = resource.getStatus();
-            if (status == null) {
-                status = new ServiceEnvStatus();
-                resource.setStatus(status);
-            }
-
-            if (Boolean.TRUE.equals(resource.getSpec().getEnabled())) {
-                List<ServiceEnvStatus.ServiceInfo> servicesInEnv = buildServicesInEnv(namespace, envName);
-                istioConfigService.updateServiceEnvStatusForEnv(namespace, envName, servicesInEnv);
-                log.info("ServiceEnv {}/{} status updated services: {}",
-                        namespace, resource.getMetadata().getName(), servicesInEnv.size());
-                return UpdateControl.noUpdate();
-            } else {
-                status.setPhase("Disabled");
-                status.setMessage("Environment is disabled");
-                status.setIstioConfigured(false);
-                status.setLastUpdateTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-                resource.setStatus(status);
-                return UpdateControl.patchStatus(resource);
-            }
+            List<ServiceEnvStatus.ServiceInfo> services = buildServiceList(namespace, envName);
+            applyActiveStatus(namespace, envName, services);
+            log.debug("ServiceEnv reconciled {}/{} services {}", namespace, envName, services.size());
+            return UpdateControl.noUpdate();
 
         } catch (Exception e) {
-            log.error("Error reconciling ServiceEnv: {}", resource.getMetadata().getName(), e);
-            ServiceEnvStatus status = resource.getStatus();
-            if (status == null) {
-                status = new ServiceEnvStatus();
-                resource.setStatus(status);
-            }
-            status.setPhase("Error");
-            status.setMessage("Reconciliation failed: " + e.getMessage());
-            status.setLastUpdateTime(LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
-            return UpdateControl.patchStatus(resource);
+            log.error("ServiceEnv reconcile failed {}/{}", namespace, envName, e);
+            return UpdateControl.patchStatus(applyErrorStatus(serviceEnv, e));
         }
     }
 
-    private List<ServiceEnvStatus.ServiceInfo> buildServicesInEnv(String namespace, String envName) {
-        var deployments = deploymentEventSource.byIndex(NAMESPACE_ENV_INDEX, indexKey(namespace, envName));
-        List<ServiceEnvStatus.ServiceInfo> servicesInEnv = new ArrayList<>();
-        for (Deployment d : deployments) {
-            if (d.getMetadata() == null || d.getMetadata().getName() == null) continue;
-            Map<String, String> labels = d.getMetadata().getLabels();
-            if (labels == null || !labels.containsKey(OperatorConstants.ENV_LABEL_KEY)) continue;
-            String serviceName = AppNameUtil.getAppName(d);
-            if (serviceName == null || serviceName.isEmpty()) continue;
-            Map<String, String> podLabels = d.getSpec() != null && d.getSpec().getTemplate() != null
-                    && d.getSpec().getTemplate().getMetadata() != null
-                    ? d.getSpec().getTemplate().getMetadata().getLabels()
-                    : null;
-            String version = podLabels != null ? podLabels.getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default")
-                    : labels.getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default");
+    // -----------------------------------------------------------------------
+    // 服务列表构建
+    // -----------------------------------------------------------------------
 
-            ServiceEnvStatus.ServiceInfo info = new ServiceEnvStatus.ServiceInfo();
-            info.setName(serviceName);
-            info.setNamespace(namespace);
-            info.setVersion(version);
-            servicesInEnv.add(info);
+    /** 从 Deployment 内存索引中全量扫描该 env 下的所有服务，构建 ServiceInfo 列表。 */
+    private List<ServiceEnvStatus.ServiceInfo> buildServiceList(String namespace, String envName) {
+        return deploymentEventSource.byIndex(NAMESPACE_ENV_INDEX, namespace + "#" + envName)
+                .stream()
+                .filter(d -> d.getMetadata() != null && d.getMetadata().getLabels() != null)
+                .map(d -> toServiceInfo(d, namespace))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+    }
+
+    private ServiceEnvStatus.ServiceInfo toServiceInfo(Deployment d, String namespace) {
+        String appName = AppNameUtil.getAppName(d);
+        if (appName == null || appName.isEmpty()) return null;
+
+        ServiceEnvStatus.ServiceInfo info = new ServiceEnvStatus.ServiceInfo();
+        info.setName(appName);
+        info.setNamespace(namespace);
+        info.setVersion(resolveVersion(d));
+        return info;
+    }
+
+    /** 优先读 Pod template labels 的 version 标签，fallback 到 Deployment labels，默认 "default"。 */
+    private String resolveVersion(Deployment d) {
+        if (d.getSpec() != null && d.getSpec().getTemplate() != null) {
+            var podLabels = d.getSpec().getTemplate().getMetadata() != null
+                    ? d.getSpec().getTemplate().getMetadata().getLabels() : null;
+            if (podLabels != null) {
+                return podLabels.getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default");
+            }
         }
-        return servicesInEnv;
+        if (d.getMetadata().getLabels() != null) {
+            return d.getMetadata().getLabels().getOrDefault(OperatorConstants.VERSION_LABEL_KEY, "default");
+        }
+        return "default";
+    }
+
+    // -----------------------------------------------------------------------
+    // Status 写入（带乐观锁重试）
+    // -----------------------------------------------------------------------
+
+    /**
+     * 全量写入 ServiceEnv status，使用乐观锁重试应对并发冲突。
+     * 每次重试都重新 get 最新版本，确保 resourceVersion 正确。
+     */
+    private void applyActiveStatus(String namespace, String envName,
+                                   List<ServiceEnvStatus.ServiceInfo> services) {
+        int maxRetries = 3;
+        for (int attempt = 0; attempt < maxRetries; attempt++) {
+            try {
+                ServiceEnv latest = kubernetesClient.resources(ServiceEnv.class)
+                        .inNamespace(namespace).withName(envName).get();
+                if (latest == null) return;
+
+                ServiceEnvStatus status = latest.getStatus() != null
+                        ? latest.getStatus() : new ServiceEnvStatus();
+                status.setServices(services);
+                status.setPhase("Active");
+                status.setMessage("Environment is active with " + services.size() + " services");
+                status.setIstioConfigured(true);
+                status.setLastUpdateTime(now());
+                latest.setStatus(status);
+                kubernetesClient.resource(latest).updateStatus();
+                return;
+
+            } catch (io.fabric8.kubernetes.client.KubernetesClientException e) {
+                if (e.getCode() == HttpURLConnection.HTTP_CONFLICT && attempt < maxRetries - 1) {
+                    log.debug("ServiceEnv status conflict {}/{} attempt {} retrying", namespace, envName, attempt + 1);
+                } else {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private ServiceEnv applyDisabledStatus(ServiceEnv serviceEnv) {
+        ServiceEnvStatus status = serviceEnv.getStatus() != null
+                ? serviceEnv.getStatus() : new ServiceEnvStatus();
+        status.setPhase("Disabled");
+        status.setMessage("Environment is disabled");
+        status.setIstioConfigured(false);
+        status.setLastUpdateTime(now());
+        serviceEnv.setStatus(status);
+        return serviceEnv;
+    }
+
+    private ServiceEnv applyErrorStatus(ServiceEnv serviceEnv, Exception e) {
+        ServiceEnvStatus status = serviceEnv.getStatus() != null
+                ? serviceEnv.getStatus() : new ServiceEnvStatus();
+        status.setPhase("Error");
+        status.setMessage("Reconciliation failed: " + e.getMessage());
+        status.setLastUpdateTime(now());
+        serviceEnv.setStatus(status);
+        return serviceEnv;
+    }
+
+    private static String now() {
+        return LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME);
     }
 }

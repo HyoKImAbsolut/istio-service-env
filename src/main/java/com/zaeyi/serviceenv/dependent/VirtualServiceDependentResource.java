@@ -1,20 +1,24 @@
 package com.zaeyi.serviceenv.dependent;
 
+import com.zaeyi.serviceenv.constants.OperatorConstants;
 import com.zaeyi.serviceenv.crd.App;
-import com.zaeyi.serviceenv.service.IstioConfigServiceHolder;
 import io.fabric8.istio.api.networking.v1.VirtualService;
+import io.fabric8.kubernetes.api.model.Namespace;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
-import io.javaoperatorsdk.operator.api.reconciler.dependent.ReconcileResult;
-import io.javaoperatorsdk.operator.processing.dependent.Matcher;
 import io.javaoperatorsdk.operator.processing.dependent.kubernetes.CRUDKubernetesDependentResource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import java.util.List;
 import java.util.Set;
 
 /**
  * VirtualService DependentResource，ownerReference 由 SDK 自动添加。
- * JOSDK 通过反射创建，无法注入 Spring bean，故通过 {@link IstioConfigServiceHolder} 获取 IstioConfigService。
+ * 直接从 App.status.envs 读取有效环境集合，该值由 AppReconciler.reconcile() 在同一周期内写入。
  */
 public class VirtualServiceDependentResource extends CRUDKubernetesDependentResource<VirtualService, App> {
+
+    private static final Logger log = LoggerFactory.getLogger(VirtualServiceDependentResource.class);
 
     public VirtualServiceDependentResource() {
         super(VirtualService.class);
@@ -22,36 +26,30 @@ public class VirtualServiceDependentResource extends CRUDKubernetesDependentReso
 
     @Override
     protected VirtualService desired(App primary, Context<App> context) {
-        Set<String> environmentNames = IstioConfigServiceHolder.get().computeEnvironmentNamesForApp(primary);
+        List<String> envList = primary.getStatus() != null ? primary.getStatus().getEnvs() : null;
+        Set<String> environmentNames = envList != null ? Set.copyOf(envList) : Set.of();
+
         if (environmentNames.isEmpty()) return null;
 
         String namespace = primary.getMetadata().getNamespace();
         String appName = primary.getSpec().getAppName();
-        String fallbackEnvironment = IstioConfigServiceHolder.get().getFallbackEnvFromNamespace(namespace);
+        String fallbackEnvironment = getFallbackEnv(namespace, context);
         return IstioResourceBuilder.buildVirtualService(namespace, appName, environmentNames, fallbackEnvironment);
     }
 
-    @Override
-    public Matcher.Result<VirtualService> match(VirtualService actual, App primary, Context<App> context) {
-        var desired = desired(primary, context);
-        if (desired == null) {
-            return Matcher.Result.computed(false, null);
-        }
-        return super.match(actual, desired, primary, context);
-    }
-
-    @Override
-    public ReconcileResult<VirtualService> reconcile(App primary, Context<App> context) {
-        var desired = desired(primary, context);
-        var actualOpt = getSecondaryResource(primary, context);
-
-        if (desired == null) {
-            if (actualOpt.isPresent()) {
-                context.getClient().resource(actualOpt.get()).delete();
+    /** 从 namespace 注解读取 fallback env，无注解时返回 null（VS 不生成 catch-all 路由）。 */
+    private String getFallbackEnv(String namespace, Context<App> context) {
+        try {
+            Namespace ns = context.getClient().namespaces().withName(namespace).get();
+            if (ns != null && ns.getMetadata() != null && ns.getMetadata().getAnnotations() != null) {
+                return ns.getMetadata().getAnnotations().get(OperatorConstants.NAMESPACE_FALLBACK_ENV_ANNOTATION);
             }
-            return ReconcileResult.noOperation(null);
+            return null;
+        } catch (Exception e) {
+            log.warn("Failed to read fallback-env annotation from namespace {} VirtualService will have no catch-all route: {}",
+                    namespace, e.getMessage());
+            return null;
         }
-
-        return super.reconcile(primary, context);
     }
+
 }
