@@ -2,6 +2,7 @@ package com.zaeyi.serviceenv.util;
 
 import com.zaeyi.serviceenv.constants.OperatorConstants;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * 从 Deployment 读取 app 名称。
@@ -17,6 +18,6 @@ public final class AppNameUtil {
             return null;
         }
         String name = d.getSpec().getTemplate().getMetadata().getLabels().get(OperatorConstants.APP_NAME_LABEL_KEY);
-        return (name != null && !name.isEmpty()) ? name : null;
+        return StringUtils.isNotEmpty(name) ? name : null;
     }
 }

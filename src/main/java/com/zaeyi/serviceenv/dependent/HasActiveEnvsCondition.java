@@ -4,6 +4,7 @@ import com.zaeyi.serviceenv.crd.App;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
 import io.javaoperatorsdk.operator.api.reconciler.dependent.DependentResource;
 import io.javaoperatorsdk.operator.processing.dependent.workflow.Condition;
+import org.apache.commons.lang3.CollectionUtils;
 
 /**
  * DependentResource 的前置条件：App.status.envs 非空才允许创建/更新 VS/DR。
@@ -19,7 +20,6 @@ public class HasActiveEnvsCondition implements Condition<Object, App> {
                          App primary,
                          Context<App> context) {
         if (primary.getStatus() == null) return false;
-        var envs = primary.getStatus().getEnvs();
-        return envs != null && !envs.isEmpty();
+        return CollectionUtils.isNotEmpty(primary.getStatus().getEnvs());
     }
 }

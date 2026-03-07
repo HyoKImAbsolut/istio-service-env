@@ -16,8 +16,9 @@ import io.javaoperatorsdk.operator.api.reconciler.dependent.Dependent;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
@@ -45,9 +46,9 @@ import java.util.stream.Collectors;
         @Dependent(type = VirtualServiceDependentResource.class,  reconcilePrecondition = HasActiveEnvsCondition.class)
 })
 @ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
-@Slf4j
-@RequiredArgsConstructor
 public class AppReconciler implements Reconciler<App> {
+
+    private static final Logger log = LoggerFactory.getLogger(AppReconciler.class);
 
     // -----------------------------------------------------------------------
     // Deployment 索引键定义
@@ -135,7 +136,7 @@ public class AppReconciler implements Reconciler<App> {
         if (se.getSpec() == null) return Set.of();
         String namespace = se.getMetadata().getNamespace();
         String envName = se.getSpec().getEnvName();
-        if (envName == null || envName.isEmpty()) return Set.of();
+        if (StringUtils.isEmpty(envName)) return Set.of();
 
         return deploymentEventSource.byIndex(NAMESPACE_ENV_INDEX, namespace + "#" + envName)
                 .stream()
@@ -163,7 +164,7 @@ public class AppReconciler implements Reconciler<App> {
         String namespace = app.getMetadata().getNamespace();
         String appName   = app.getSpec().getAppName();
 
-        if (appName == null || appName.isEmpty()) {
+        if (StringUtils.isEmpty(appName)) {
             log.warn("App {}/{} spec.appName is empty skipping", namespace, app.getMetadata().getName());
             return UpdateControl.noUpdate();
         }
@@ -195,7 +196,7 @@ public class AppReconciler implements Reconciler<App> {
         return deploymentEventSource.byIndex(NAMESPACE_APP_INDEX, namespace + "#" + appName)
                 .stream()
                 .map(this::getEnvLabel)
-                .filter(env -> env != null && !env.isEmpty())
+                .filter(StringUtils::isNotEmpty)
                 .filter(env -> isServiceEnvEnabled(namespace, env))
                 .collect(Collectors.toSet());
     }

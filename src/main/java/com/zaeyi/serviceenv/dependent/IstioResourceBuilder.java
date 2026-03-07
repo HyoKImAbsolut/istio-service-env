@@ -7,6 +7,8 @@ import io.fabric8.istio.api.networking.v1.DestinationRuleBuilder;
 import io.fabric8.istio.api.networking.v1.VirtualService;
 import io.fabric8.istio.api.networking.v1.VirtualServiceBuilder;
 
+import org.apache.commons.lang3.StringUtils;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -49,7 +51,7 @@ public final class IstioResourceBuilder {
                 .map(environmentName -> buildEnvRoute(serviceName, environmentName))
                 .collect(Collectors.toCollection(ArrayList::new));
 
-        if (fallbackEnvironment != null && !fallbackEnvironment.isEmpty()) {
+        if (StringUtils.isNotEmpty(fallbackEnvironment)) {
             routes.add(buildCatchAllRoute(serviceName, fallbackEnvironment));
         }
 

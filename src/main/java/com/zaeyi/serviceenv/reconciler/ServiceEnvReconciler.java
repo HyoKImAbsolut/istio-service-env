@@ -12,8 +12,9 @@ import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import io.javaoperatorsdk.operator.processing.event.source.EventSource;
 import io.javaoperatorsdk.operator.processing.event.source.informer.InformerEventSource;
 import io.fabric8.kubernetes.client.KubernetesClient;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.HttpURLConnection;
@@ -37,9 +38,9 @@ import java.util.stream.Collectors;
  */
 @Component
 @ControllerConfiguration(informer = @Informer(namespaces = {Constants.WATCH_ALL_NAMESPACES}))
-@Slf4j
-@RequiredArgsConstructor
 public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
+
+    private static final Logger log = LoggerFactory.getLogger(ServiceEnvReconciler.class);
 
     /** 索引 key: "namespace#envName" → 按 env 查找该 env 下所有带 env 标签的 Deployment。 */
     private static final String NAMESPACE_ENV_INDEX = "namespace-env";
@@ -47,6 +48,10 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
     private final KubernetesClient kubernetesClient;
 
     private InformerEventSource<Deployment, ServiceEnv> deploymentEventSource;
+
+    public ServiceEnvReconciler(KubernetesClient kubernetesClient) {
+        this.kubernetesClient = kubernetesClient;
+    }
 
     // -----------------------------------------------------------------------
     // EventSource 注册
@@ -68,7 +73,7 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
         if (d.getMetadata() == null || d.getMetadata().getLabels() == null
                 || d.getMetadata().getNamespace() == null) return List.of();
         String env = d.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY);
-        if (env == null || env.isEmpty()) return List.of();
+        if (StringUtils.isEmpty(env)) return List.of();
         return List.of(d.getMetadata().getNamespace() + "#" + env);
     }
 
@@ -80,7 +85,7 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
         if (d.getMetadata() == null || d.getMetadata().getLabels() == null) return Set.of();
         String env = d.getMetadata().getLabels().get(OperatorConstants.ENV_LABEL_KEY);
         String namespace = d.getMetadata().getNamespace();
-        if (env == null || env.isEmpty() || namespace == null) return Set.of();
+        if (StringUtils.isEmpty(env) || namespace == null) return Set.of();
         return Set.of(new ResourceID(env, namespace));
     }
 
@@ -93,7 +98,7 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
         String namespace = serviceEnv.getMetadata().getNamespace();
         String envName   = serviceEnv.getSpec() != null ? serviceEnv.getSpec().getEnvName() : null;
 
-        if (envName == null || envName.isEmpty()) {
+        if (StringUtils.isEmpty(envName)) {
             log.warn("ServiceEnv {}/{} spec.envName is empty skipping",
                     namespace, serviceEnv.getMetadata().getName());
             return UpdateControl.noUpdate();
@@ -131,7 +136,7 @@ public class ServiceEnvReconciler implements Reconciler<ServiceEnv> {
 
     private ServiceEnvStatus.ServiceInfo toServiceInfo(Deployment d, String namespace) {
         String appName = AppNameUtil.getAppName(d);
-        if (appName == null || appName.isEmpty()) return null;
+        if (StringUtils.isEmpty(appName)) return null;
 
         ServiceEnvStatus.ServiceInfo info = new ServiceEnvStatus.ServiceInfo();
         info.setName(appName);
