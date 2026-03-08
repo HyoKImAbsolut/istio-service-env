@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: serviceenv-operator
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/HyoKImAbsolut/istio-service-env.git
+    targetRevision: HEAD
+    path: helm/serviceenv-operator
+    helm:
+      releaseName: serviceenv-operator
+      valueFiles:
+        - values.yaml
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: serviceenv-system
+
+  syncPolicy:
+    automated:
+      prune: true       # 删除 Git 中已移除的资源
+      selfHeal: true    # 集群状态偏移时自动修复
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
